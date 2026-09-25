@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A · Cheat Sheet</title>
+<!-- Mockup only. Direction A: everything champ select needs on one screen, in the League client's visual language.
+     Fonts and rune/spell/starter icons load from Google Fonts and Data Dragon; the real site would self-host them. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --bg:#090c10;--panel:#10151b;--panel2:#151b23;--line:#222a34;--ink:#ece6d6;--muted:#9aa3ad;--faint:#6d7682;
+    --gold:#c8aa6e;--gold2:#f0d58c;--good:#3fc1a5;--bad:#e4606d;--sett:#e8612c;--opp:#b9c2cc;
+    --body:Inter,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--body)}
+  img{display:block}
+  .mock{position:fixed;right:12px;bottom:12px;z-index:5;font:600 11px var(--mono);color:#1a1405;background:var(--gold);padding:5px 9px;border-radius:4px}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+
+  .top{display:flex;align-items:center;gap:18px;height:56px;border-bottom:1px solid var(--line)}
+  .brand{font:700 15px var(--body);letter-spacing:.16em;text-transform:uppercase}
+  .brand b{color:var(--gold)}
+  .search{flex:1;max-width:420px;display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--muted);font-size:13px}
+  .search img{width:20px;height:20px;border-radius:4px}
+  .search b{color:var(--ink);font-weight:600}
+  .search kbd{margin-left:auto;font:500 11px var(--mono);color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .top .meta{margin-left:auto;font:500 12px var(--mono);color:var(--faint)}
+
+  /* one-line matchup strip */
+  .strip{display:flex;align-items:center;gap:26px;padding:14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .who{display:flex;align-items:center;gap:10px}
+  .who img{width:46px;height:46px;border-radius:6px;border:2px solid var(--sett)}
+  .who img.opp{border-color:var(--opp)}
+  .who .names{font:700 20px/1.1 var(--body)}
+  .who .names span{color:var(--faint);font-weight:500;font-size:14px;margin:0 6px}
+  .who .role{display:block;font:500 12px var(--body);color:var(--muted)}
+  .kpi b{display:block;font:600 20px/1.1 var(--mono)}
+  .kpi span{font-size:12px;color:var(--muted)}
+  .kpi em{font-style:normal;color:var(--good);font-weight:600}
+  .kpi.sample b{color:var(--muted)}
+  .opps{margin-left:auto;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--faint)}
+  .opps a{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 3px;border:1px solid var(--line);border-radius:999px;color:var(--muted);text-decoration:none}
+  .opps a img{width:20px;height:20px;border-radius:50%}
+  .opps a.on{border-color:var(--gold);color:var(--gold2)}
+
+  /* the board */
+  .board{display:grid;grid-template-columns:1.1fr .9fr 1.2fr;gap:14px;padding:16px 0}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  h2{margin:0 0 10px;font:700 11.5px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  h2 small{font:500 11.5px var(--body);letter-spacing:0;text-transform:none;color:var(--muted)}
+  .step{font:600 10px var(--mono);color:#1a1405;background:var(--gold);border-radius:3px;padding:1px 5px;letter-spacing:0}
+
+  /* runes laid out like the client */
+  .trees{display:grid;grid-template-columns:1.15fr 1fr;gap:14px}
+  .tree-h{display:flex;align-items:center;gap:7px;font:600 12.5px var(--body);color:var(--ink);margin-bottom:8px}
+  .tree-h img{width:22px;height:22px}
+  .row{display:flex;justify-content:space-around;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  .rn{width:34px;height:34px;border-radius:50%;opacity:.28;filter:grayscale(1)}
+  .row.key .rn{width:42px;height:42px}
+  .rn.on{opacity:1;filter:none;box-shadow:0 0 0 2px var(--gold),0 0 14px -2px var(--gold)}
+  .row.key .rn.on{box-shadow:none;filter:drop-shadow(0 0 8px rgba(200,170,110,.55))}
+  .picked{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.6}
+  .picked b{color:var(--ink);font-weight:600}
+
+  /* spells, start, skills */
+  .pick{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .pick img{width:38px;height:38px;border-radius:5px;border:1px solid var(--line)}
+  .pick .t b{display:block;font-weight:600;font-size:13.5px}
+  .pick .t span{font:500 11.5px var(--mono);color:var(--muted)}
+  .alt{font-size:12px;color:var(--faint);margin:0 0 14px}
+  .alt b{color:var(--muted);font-weight:500}
+  .sec+.sec{margin-top:4px;padding-top:12px;border-top:1px solid var(--line)}
+  .skills{border:1px dashed var(--line);border-radius:6px;padding:10px;font-size:12px;color:var(--faint)}
+
+  /* build order */
+  .path{list-style:none;margin:0;padding:0}
+  .path li{display:grid;grid-template-columns:22px 38px 1fr auto;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+  .path li:first-child{border-top:0}
+  .path .n{font:600 11px var(--mono);color:var(--faint);text-align:center}
+  .path img{width:38px;height:38px;border-radius:5px;border:1px solid var(--line)}
+  .path .t b{display:block;font-weight:600;font-size:13.5px}
+  .path .t span{font-size:12px;color:var(--muted)}
+  .path .m{font:600 13px var(--mono);color:var(--ink);text-align:right}
+  .path .m small{display:block;font:500 11px var(--mono);color:var(--faint)}
+  .tag{display:inline-block;margin-left:6px;font:600 10.5px var(--mono);padding:1px 6px;border-radius:3px;vertical-align:1px}
+  .tag.good{color:var(--good);background:rgba(63,193,165,.12)}
+  .avoid{margin-top:10px;display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:6px;background:rgba(228,96,109,.08);border:1px solid rgba(228,96,109,.25);font-size:12.5px;color:var(--muted)}
+  .avoid img{width:30px;height:30px;border-radius:4px;filter:grayscale(.6)}
+  .avoid b{color:var(--bad)}
+
+  /* opponent line */
+  .their{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;margin-bottom:24px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:13px;color:var(--muted)}
+  .their .lbl{font:700 11.5px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--opp)}
+  .their .it{display:flex;align-items:center;gap:6px;color:var(--ink)}
+  .their .it img{width:26px;height:26px;border-radius:4px}
+  .their .note{margin-left:auto;color:var(--gold2)}
+
+  @media(max-width:1100px){.board{grid-template-columns:1fr 1fr}.build{grid-column:1/-1}.opps{margin-left:0}}
+  @media(max-width:700px){
+    .wrap{padding:0 16px}.top .meta{display:none}.search{max-width:none}
+    .strip{gap:14px 22px}.who{width:100%}.opps{width:100%;overflow-x:auto}
+    .board{grid-template-columns:1fr}
+    .their .note{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="mock">Mockup A · illustrative numbers</div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Sett<b>istics</b></div>
+    <div class="search"><img src="../../public/ddragon/champion/Sett.png" alt=""><b>Sett</b> vs <img src="../../public/ddragon/champion/Aatrox.png" alt=""><b>Aatrox</b><kbd>Top</kbd></div>
+    <div class="meta">Patch 26.19 · EUW KR ME TR</div>
+  </header>
+
+  <section class="strip">
+    <div class="who"><img src="../../public/ddragon/champion/Sett.png" alt="Sett"><div><div class="names">Sett<span>vs</span>Aatrox</div><span class="role">Top lane</span></div><img class="opp" src="../../public/ddragon/champion/Aatrox.png" alt="Aatrox"></div>
+    <div class="kpi"><b>53.4%</b><span>win rate · <em>+3.6</em> vs Sett's usual</span></div>
+    <div class="kpi"><b>+140</b><span>lane gold before the first gank</span></div>
+    <div class="kpi sample"><b>348</b><span>games · fair sample</span></div>
+    <div class="opps">
+      <a href="#"><img src="../../public/ddragon/champion/Darius.png" alt="">Darius</a>
+      <a href="#" class="on"><img src="../../public/ddragon/champion/Aatrox.png" alt="">Aatrox</a>
+      <a href="#"><img src="../../public/ddragon/champion/Gnar.png" alt="">Gnar</a>
+      <a href="#"><img src="../../public/ddragon/champion/Teemo.png" alt="">Teemo</a>
+    </div>
+  </section>
+
+  <main class="board">
+    <section class="box">
+      <h2><span class="step">1</span>Runes <small>Conqueror in 81% · this exact page in 34%</small></h2>
+      <div class="trees">
+        <div class="tree">
+          <div class="tree-h"><img src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/7201_Precision.png" alt="">Precision</div>
+          <div class="row key">
+            <img class="rn" title="Press the Attack" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/PressTheAttack/PressTheAttack.png" alt="">
+            <img class="rn" title="Lethal Tempo" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LethalTempo/LethalTempoTemp.png" alt="">
+            <img class="rn" title="Fleet Footwork" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/FleetFootwork/FleetFootwork.png" alt="">
+            <img class="rn on" title="Conqueror" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt="Conqueror">
+          </div>
+          <div class="row">
+            <img class="rn" title="Absorb Life" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/AbsorbLife/AbsorbLife.png" alt="">
+            <img class="rn on" title="Triumph" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Triumph.png" alt="Triumph">
+            <img class="rn" title="Presence of Mind" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/PresenceOfMind/PresenceOfMind.png" alt="">
+          </div>
+          <div class="row">
+            <img class="rn on" title="Legend: Alacrity" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendAlacrity/LegendAlacrity.png" alt="Legend: Alacrity">
+            <img class="rn" title="Legend: Haste" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendHaste/LegendHaste.png" alt="">
+            <img class="rn" title="Legend: Bloodline" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendBloodline/LegendBloodline.png" alt="">
+          </div>
+          <div class="row">
+            <img class="rn" title="Coup de Grace" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/CoupDeGrace/CoupDeGrace.png" alt="">
+            <img class="rn" title="Cut Down" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/CutDown/CutDown.png" alt="">
+            <img class="rn on" title="Last Stand" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/LastStand/LastStand.png" alt="Last Stand">
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-h"><img src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/7204_Resolve.png" alt="">Resolve</div>
+          <div class="row">
+            <img class="rn" title="Demolish" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Demolish/Demolish.png" alt="">
+            <img class="rn" title="Font of Life" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/FontOfLife/FontOfLife.png" alt="">
+            <img class="rn" title="Shield Bash" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/MirrorShell/MirrorShell.png" alt="">
+          </div>
+          <div class="row">
+            <img class="rn" title="Conditioning" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Conditioning/Conditioning.png" alt="">
+            <img class="rn on" title="Second Wind" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/SecondWind/SecondWind.png" alt="Second Wind">
+            <img class="rn" title="Bone Plating" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/BonePlating/BonePlating.png" alt="">
+          </div>
+          <div class="row">
+            <img class="rn" title="Overgrowth" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Overgrowth/Overgrowth.png" alt="">
+            <img class="rn" title="Revitalize" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Revitalize/Revitalize.png" alt="">
+            <img class="rn on" title="Unflinching" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/Unflinching/Unflinching.png" alt="Unflinching">
+          </div>
+          <p class="picked"><b>Conqueror</b> · Triumph · Legend: Alacrity · Last Stand<br><b>Resolve</b> · Second Wind · Unflinching</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="box">
+      <div class="sec">
+        <h2><span class="step">2</span>Spells <small>58% of games</small></h2>
+        <div class="pick"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerDot.png" alt=""><div class="t"><b>Flash + Ignite</b></div></div>
+        <p class="alt">or <b>Flash + Teleport</b> · 37%</p>
+      </div>
+      <div class="sec">
+        <h2><span class="step">3</span>Start <small>71% of games</small></h2>
+        <div class="pick"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/1055.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/2003.png" alt=""><div class="t"><b>Doran's Blade + Potion</b></div></div>
+        <p class="alt">or <b>Doran's Shield + Potion</b> · 22%</p>
+      </div>
+      <div class="sec">
+        <h2>Skill order</h2>
+        <div class="skills">Not collected yet. It would sit here, between spells and items, as in the client.</div>
+      </div>
+    </section>
+
+    <section class="box build">
+      <h2><span class="step">4</span>Build order <small>most common item at each step</small></h2>
+      <ol class="path">
+        <li><span class="n">1</span><img src="../../public/ddragon/item/6631.png" alt=""><div class="t"><b>Stridebreaker</b><span>89% of games</span></div><div class="m">13′<small>min</small></div></li>
+        <li><span class="n">B</span><img src="../../public/ddragon/item/3047.png" alt=""><div class="t"><b>Plated Steelcaps</b><span>61% · right after the 1st item</span></div><div class="m">14′<small>min</small></div></li>
+        <li><span class="n">2</span><img src="../../public/ddragon/item/3053.png" alt=""><div class="t"><b>Sterak's Gage<span class="tag good">best 2nd · +2.8 pp</span></b><span>41% of games</span></div><div class="m">21′<small>min</small></div></li>
+        <li><span class="n">3</span><img src="../../public/ddragon/item/2501.png" alt=""><div class="t"><b>Overlord's Bloodmail</b><span>38% of games</span></div><div class="m">26′<small>min</small></div></li>
+        <li><span class="n">4</span><img src="../../public/ddragon/item/3161.png" alt=""><div class="t"><b>Spear of Shojin</b><span>24% of games</span></div><div class="m">31′<small>min</small></div></li>
+        <li><span class="n">5</span><img src="../../public/ddragon/item/6333.png" alt=""><div class="t"><b>Death's Dance</b><span>19% of games</span></div><div class="m">37′<small>min</small></div></li>
+      </ol>
+      <div class="avoid"><img src="../../public/ddragon/item/3181.png" alt=""><span><b>Skip Hullbreaker.</b> It wins 61% of games, but because it is bought when already ahead. Its own effect is −3.6 pp.</span></div>
+    </section>
+  </main>
+
+  <section class="their">
+    <span class="lbl">Aatrox usually</span>
+    <span class="it"><img src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt="">Conqueror</span>
+    <span class="it"><img src="../../public/ddragon/item/3047.png" alt="">Steelcaps 12′</span>
+    <span class="it"><img src="../../public/ddragon/item/6692.png" alt="">Eclipse 15′</span>
+    <span class="it"><img src="../../public/ddragon/item/3053.png" alt="">Sterak's 23′</span>
+    <span class="note">Your first item lands ~2 min before his.</span>
+  </section>
+</div>
+</body>
+</html>

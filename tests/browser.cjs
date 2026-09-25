@@ -1,0 +1,32 @@
+// Optional full browser QA; start npm start first. Fixtures are intercepted in memory.
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ let stats={schemaVersion:2,status:'empty',uniqueMatches:0,sources:[{id:'riot',name:'Riot Match-V5 timelines',type:'riot_match_timelines',supportsWpaResearch:true}],buckets:[]};
+ const champs=['Sett','Teemo','Ahri','MonkeyKing'].map(id=>({id,name:id==='MonkeyKing'?'Wukong':id,tags:['Fighter']}));
+ await page.route('**/data/stats.json',r=>r.fulfill({json:stats}));
+ await page.route('**/api/riot/health*',r=>r.fulfill({json:{configured:false,connected:false}}));
+ await page.route('**/api/riot/static-data',r=>r.fulfill({json:{version:'16.18.1',champions:champs}}));
+ await page.goto('http://127.0.0.1:8888');
+ await page.waitForFunction(()=>document.querySelector('#champ').options.length===4);
+ assert.match(await page.locator('#results').textContent(),/No collected matches/);
+ assert.equal(await page.locator('#matchup-wpa').textContent(),'—');
+ await page.selectOption('#champ','Ahri');await page.selectOption('#opponent','MonkeyKing');
+ assert.match(await page.locator('#opp-avatar img').getAttribute('src'),/MonkeyKing/);
+ await page.selectOption('#champ','Sett');await page.selectOption('#opponent','Teemo');
+ stats={schemaVersion:2,status:'observed',uniqueMatches:10,generatedAt:new Date().toISOString(),sources:[{id:'riot',name:'Riot Match-V5 timelines',type:'riot_match_timelines',supportsWpaResearch:true}],buckets:[{sourceId:'riot',champion:'Sett',opponent:'Teemo',role:'TOP',patch:'16.18',region:'EUW1',games:10,wins:6,eligible:{packages:10,items:10,runes:10,spells:10},choices:[{kind:'packages',id:'1054x1',label:"Doran's Shield",games:10,wins:6,timeSum:0,timeCount:0},{kind:'items',id:'1036',label:'Long Sword',games:5,wins:4,timeSum:30,timeCount:5}]}]};
+ await page.click('#retry-data');await page.waitForFunction(()=>document.querySelector('#games').textContent==='10');
+ assert.equal(await page.locator('#observed-wr').textContent(),'60.0%');
+ assert.match(await page.locator('#results').textContent(),/Long Sword/);
+ await page.locator('[data-sort="wr"]').first().click();
+ await page.click('[data-tab="runes"]');await page.click('[data-tab="spells"]');await page.click('[data-tab="items"]');
+ await page.click('#theme');assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+ await page.click('#learn');assert.equal(await page.locator('#method').evaluate(d=>d.open),true);await page.locator('#method .close').click();
+ await page.selectOption('#role','BOTTOM');assert.match(await page.locator('#results').textContent(),/No collected matches/);
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/settistics-mobile-qa.png'});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ assert.deepEqual(errors,[]);await browser.close();console.log('Browser interaction and mobile checks passed');
+})().catch(error=>{console.error(error);process.exit(1)});

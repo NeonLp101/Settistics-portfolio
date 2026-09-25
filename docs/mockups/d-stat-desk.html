@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D · Stat Desk</title>
+<!-- Mockup only. Direction D: a dense, table-first page for players who want every number, with pick rate, win rate,
+     sample size and measured impact side by side. Fonts and some icons load from Google Fonts and Data Dragon. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --bg:#0c0e11;--panel:#13161b;--panel2:#191d23;--line:#242a32;--ink:#e7e9ec;--muted:#98a0aa;--faint:#69717c;
+    --accent:#f2c14e;--good:#53c68c;--bad:#ef5f67;--sett:#e8612c;
+    --body:Inter,system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;color:var(--ink);font:13px/1.45 var(--body)}
+  img{display:block}
+  .mock{position:fixed;right:12px;bottom:12px;z-index:5;font:600 11px var(--mono);color:#1a1405;background:var(--accent);padding:5px 9px;border-radius:4px}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 18px}
+
+  .top{display:flex;align-items:center;gap:10px;height:54px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .brand{font:700 14px var(--body);letter-spacing:.14em;text-transform:uppercase;margin-right:14px}
+  .brand b{color:var(--accent)}
+  .sel{display:flex;align-items:center;gap:6px;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);font-size:12.5px;white-space:nowrap}
+  .sel img{width:18px;height:18px;border-radius:3px}
+  .sel::after{content:"▾";color:var(--faint);font-size:10px;margin-left:2px}
+  .vs{color:var(--faint);font-size:12px}
+  .top .n{margin-left:auto;font:500 12px var(--mono);color:var(--muted)}
+
+  .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;margin:14px 0;background:var(--line);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .kpi{background:var(--panel);padding:10px 12px}
+  .kpi .l{font:600 10.5px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .kpi .v{font:600 20px/1.25 var(--mono);display:flex;align-items:baseline;gap:8px}
+  .kpi .v small{font:500 12px var(--mono)}
+  .kpi .s{font-size:11.5px;color:var(--muted)}
+  .up{color:var(--good)}.down{color:var(--bad)}
+
+  .bar-row{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .seg span{padding:5px 10px;font-size:12px;color:var(--muted)}
+  .seg span.on{background:var(--panel2);color:var(--ink)}
+  .legend{font-size:11.5px;color:var(--faint)}
+
+  .g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .ph{display:flex;align-items:baseline;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line)}
+  .ph h2{margin:0;font:700 12px var(--body);letter-spacing:.08em;text-transform:uppercase}
+  .ph span{font-size:11.5px;color:var(--faint)}
+  table{width:100%;border-collapse:collapse}
+  th{font:600 10.5px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);text-align:right;padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child{text-align:left}
+  th.sorted{color:var(--accent)}
+  td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;font:500 12.5px var(--mono);white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td.c{text-align:left;font:500 12.5px var(--body);white-space:normal}
+  td.c div{display:flex;align-items:center;gap:8px}
+  td.c img{width:24px;height:24px;border-radius:4px;flex:none}
+  td.c img.r{border-radius:50%;background:#000}
+  td.c img+img{margin-left:-4px}
+  .pick{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+  .pick i{display:block;height:5px;border-radius:2px;background:var(--muted);opacity:.55}
+  .imp.up{color:var(--good)}.imp.down{color:var(--bad)}.imp.na,.imp.flat{color:var(--faint)}
+  .imp small{color:var(--faint);font-size:11px}
+
+  .slots{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-top:12px}
+  .slot{border-left:1px solid var(--line)}
+  .slot:first-child{border-left:0}
+  .slot h3{margin:0;padding:8px 10px;font:700 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+  .slot h3 span{font:500 11px var(--mono);color:var(--faint);letter-spacing:0}
+  .it{display:grid;grid-template-columns:30px 1fr;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .it:last-child{border-bottom:0}
+  .it img{width:30px;height:30px;border-radius:4px}
+  .it b{display:block;font-weight:600;font-size:12.5px;line-height:1.25}
+  .it .nums{font:500 11.5px var(--mono);color:var(--muted)}
+  .it .imp{font:600 11.5px var(--mono)}
+
+  .impact{margin:12px 0 28px}
+  .rng{position:relative;width:220px;height:18px;margin-left:auto}
+  .rng::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--faint)}
+  .rng i{position:absolute;top:8px;height:2px;background:currentColor;opacity:.5}
+  .rng b{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:currentColor}
+  .note{padding:9px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
+  .note b{color:var(--ink)}
+
+  @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.g3{grid-template-columns:1fr 1fr}.slots{grid-template-columns:repeat(3,1fr)}.slot:nth-child(4){border-left:0}.slot:nth-child(n+4){border-top:1px solid var(--line)}}
+  @media(max-width:720px){
+    .wrap{padding:0 12px}.top{height:auto;padding:10px 0;gap:6px}.brand{width:100%}.top .n{margin-left:0}
+    .kpis{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr}.slots{grid-template-columns:1fr 1fr}
+    .slot:nth-child(odd){border-left:0}.slot:nth-child(n+3){border-top:1px solid var(--line)}.slot:nth-child(4){border-left:1px solid var(--line)}
+    .hide-s{display:none}.rng{width:120px}
+    .impact .panel{overflow-x:auto}
+  }
+</style>
+</head>
+<body>
+<div class="mock">Mockup D · illustrative numbers</div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Sett<b>istics</b></div>
+    <span class="sel"><img src="../../public/ddragon/champion/Sett.png" alt="">Sett</span><span class="vs">vs</span>
+    <span class="sel"><img src="../../public/ddragon/champion/Aatrox.png" alt="">Aatrox</span>
+    <span class="sel">Top</span><span class="sel">Patch 26.19</span><span class="sel">All regions</span>
+    <span class="n">348 games · fair sample</span>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi"><div class="l">Win rate</div><div class="v">53.4%<small class="up">+3.6</small></div><div class="s">likely 48.2–58.6% · usual 49.8%</div></div>
+    <div class="kpi"><div class="l">Games</div><div class="v">348</div><div class="s">fair sample · 4 regions</div></div>
+    <div class="kpi"><div class="l">Lane gold 1v1</div><div class="v">+140</div><div class="s">±38 · 161 clean duels</div></div>
+    <div class="kpi"><div class="l">First item done</div><div class="v">13.2′<small class="up">−1.9′</small></div><div class="s">vs Eclipse at 15.1′</div></div>
+    <div class="kpi"><div class="l">Keystone</div><div class="v">81%</div><div class="s">Conqueror · 54.3% WR</div></div>
+    <div class="kpi"><div class="l">Best 2nd item</div><div class="v up">+2.8<small>pp</small></div><div class="s">Sterak's Gage ±1.6</div></div>
+  </section>
+
+  <div class="bar-row"><div class="seg"><span class="on">Most common</span><span>Highest impact</span></div><span class="legend">Impact = change in win chance vs the average choice in the same slot, 95% range. Shown from 30 scored games.</span></div>
+
+  <section class="g3" id="top3"></section>
+  <section class="panel slots" id="slots"></section>
+
+  <section class="impact panel">
+    <div class="ph"><h2>2nd item · observed vs expected</h2><span>Expected = win chance the game state predicted when the item was bought</span></div>
+    <table id="impact"></table>
+    <div class="note"><b>Read Hullbreaker carefully:</b> it wins 61.0%, but games where it is bought were already expected to win 64.6%. The item itself costs about 3.6 points.</div>
+  </section>
+</div>
+<script>
+// Illustrative, internally consistent numbers for the layout study.
+const DD='https://ddragon.leagueoflegends.com/cdn/',R=DD+'img/perk-images/Styles/',V=DD+'16.19.1/img/',L='../../public/ddragon/item/';
+const pick=p=>`<div class="pick">${p}%<i style="width:${Math.max(2,p*.45)}px"></i></div>`;
+const imp=(m,h)=>m==null?'<span class="imp na">n&lt;30</span>':`<span class="imp ${m-h>0?'up':m+h<0?'down':'flat'}">${m>=0?'+':'−'}${Math.abs(m).toFixed(1)} <small>±${h.toFixed(1)}</small></span>`;
+const icons=(list,cls='')=>list.map(s=>`<img class="${cls}" src="${s}" alt="">`).join('');
+const table=(title,sub,rows)=>`<div class="panel"><div class="ph"><h2>${title}</h2><span>${sub}</span></div><table>
+  <tr><th>Choice</th><th class="sorted">Pick ↓</th><th>WR</th><th class="hide-s">Games</th><th>Impact</th></tr>
+  ${rows.map(r=>`<tr><td class="c"><div>${r.i}<span>${r.n}</span></div></td><td>${pick(r.p)}</td><td>${r.wr.toFixed(1)}%</td><td class="hide-s">${r.g}</td><td>${imp(r.m,r.h)}</td></tr>`).join('')}</table></div>`;
+document.getElementById('top3').innerHTML=
+  table('Keystone','348 games',[
+    {i:icons([R+'Precision/Conqueror/Conqueror.png'],'r'),n:'Conqueror',p:81,wr:54.3,g:282,m:0.6,h:1.9},
+    {i:icons([R+'Precision/PressTheAttack/PressTheAttack.png'],'r'),n:'Press the Attack',p:11,wr:50.0,g:38,m:-1.2,h:4.6},
+    {i:icons([R+'Resolve/GraspOfTheUndying/GraspOfTheUndying.png'],'r'),n:'Grasp of the Undying',p:6,wr:47.6,g:21}])+
+  table('Summoner spells','348 games',[
+    {i:icons([V+'spell/SummonerFlash.png',V+'spell/SummonerDot.png']),n:'Flash + Ignite',p:58,wr:54.9,g:202,m:1.1,h:2.1},
+    {i:icons([V+'spell/SummonerFlash.png',V+'spell/SummonerTeleport.png']),n:'Flash + Teleport',p:37,wr:51.2,g:129,m:-1.4,h:2.7},
+    {i:icons([V+'spell/SummonerFlash.png',V+'spell/SummonerHaste.png']),n:'Flash + Ghost',p:5,wr:52.9,g:17}])+
+  table('Starting items','345 clean starts',[
+    {i:icons([V+'item/1055.png',V+'item/2003.png']),n:"Doran's Blade + Potion",p:71,wr:53.8,g:247},
+    {i:icons([V+'item/1054.png',V+'item/2003.png']),n:"Doran's Shield + Potion",p:22,wr:51.9,g:77},
+    {i:icons([V+'item/1036.png',V+'item/2003.png']),n:'Long Sword + 2 Potions',p:6,wr:57.1,g:21}]);
+const slots=[
+  ['1st item','13′',[['6631','Stridebreaker',89,53.6,0.3,1.4],['3078','Trinity Force',5,52.9],['6610','Sundered Sky',4,50.0]]],
+  ['Boots','14′',[['3047','Plated Steelcaps',61,54.2,1.0,2.2],['3111',"Mercury's Treads",27,51.6,-0.9,3.1],['3009','Boots of Swiftness',8,55.6]]],
+  ['2nd item','21′',[['3053',"Sterak's Gage",41,55.1,2.8,1.6],['3071','Black Cleaver',33,52.0,-0.6,2.4],['2501',"Overlord's Bloodmail",15,53.8,0.4,3.1],['3181','Hullbreaker',9,61.0,-3.6,2.8]]],
+  ['3rd item','26′',[['2501',"Overlord's Bloodmail",38,56.0,0.8,2.6],['3053',"Sterak's Gage",22,54.9,0.2,3.0],['6333',"Death's Dance",14,57.4]]],
+  ['4th item','31′',[['3161','Spear of Shojin',24,58.3,1.2,3.4],['6333',"Death's Dance",18,60.0],['3075','Thornmail',12,55.0]]],
+  ['5th item','37′',[['6333',"Death's Dance",19,62.5],['3065','Spirit Visage',15,60.0],['3143',"Randuin's Omen",11,63.6]]]];
+document.getElementById('slots').innerHTML=slots.map(([t,m,items])=>`<div class="slot"><h3>${t}<span>~${m}</span></h3>${items.map(([id,n,p,wr,mm,h])=>
+  `<div class="it"><img src="${L+id}.png" alt=""><div><b>${n}</b><div class="nums">${p}% · ${wr.toFixed(1)}% WR</div>${imp(mm,h)}</div></div>`).join('')}</div>`).join('');
+const x=v=>50+v/8*50;
+document.getElementById('impact').innerHTML=`<tr><th>Item</th><th>Pick</th><th>Observed WR</th><th class="hide-s">Expected WR</th><th class="hide-s">Scored games</th><th>Impact</th><th class="hide-s" style="text-align:center">−8 · 0 · +8 pp</th></tr>`+
+  [['3053',"Sterak's Gage",41,55.1,52.3,143,2.8,1.6],['3071','Black Cleaver',33,52.0,52.6,115,-0.6,2.4],['2501',"Overlord's Bloodmail",15,53.8,53.4,52,0.4,3.1],['3181','Hullbreaker',9,61.0,64.6,31,-3.6,2.8]]
+  .map(([id,n,p,wr,ex,g,m,h])=>{const c=m-h>0?'up':m+h<0?'down':'flat',col=c==='up'?'var(--good)':c==='down'?'var(--bad)':'var(--faint)';
+    return`<tr><td class="c"><div><img src="${L+id}.png" alt="">${n}</div></td><td>${p}%</td><td>${wr.toFixed(1)}%</td><td class="hide-s">${ex.toFixed(1)}%</td><td class="hide-s">${g}</td><td>${imp(m,h)}</td>
+    <td class="hide-s"><div class="rng" style="color:${col}"><i style="left:${x(m-h)}%;width:${x(m+h)-x(m-h)}%"></i><b style="left:${x(m)}%"></b></div></td></tr>`;}).join('');
+</script>
+</body>
+</html>

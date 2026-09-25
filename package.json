@@ -1,0 +1,26 @@
+{
+  "name": "settistics-riot",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && netlify dev",
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && node scripts/serve.mjs",
+    "test": "npm run build && node scripts/python.mjs -m unittest discover -s tests -v && node --test tests/backend.test.mjs tests/frontend.test.mjs tests/guide.test.mjs tests/server.test.mjs tests/password.test.mjs tests/live-data.test.mjs tests/recommendations.test.mjs tests/build-data.test.mjs",
+    "collect": "node scripts/python.mjs pipeline/engine.py collect",
+    "import:aggregate": "node scripts/python.mjs pipeline/import_aggregate.py",
+    "pipeline": "node scripts/python.mjs pipeline/engine.py",
+    "train:compare": "node scripts/python.mjs pipeline/compare_gpu.py",
+    "train:gpu": "node scripts/python.mjs pipeline/wpa.py --backend xgb-cuda",
+    "data:validate": "node scripts/publish-data.mjs --validate-only",
+    "data:publish": "node scripts/publish-data.mjs",
+    "data:refresh": "node scripts/refresh-data.mjs"
+  },
+  "devDependencies": {
+    "netlify-cli": "27.8.0"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.0"
+  }
+}

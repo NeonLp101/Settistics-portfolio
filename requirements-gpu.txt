@@ -1,0 +1,2 @@
+-r requirements-model.txt
+xgboost==3.2.0

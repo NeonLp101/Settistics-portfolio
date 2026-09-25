@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E · Overview + Timeline</title>
+<!-- Mockup only. Direction E: a simple u.gg-style build overview on top, the power timeline below it.
+     The timeline shows one build path at a time (boots before or after the first item), because averaging
+     item times across different orders describes a game nobody played.
+     Fonts and rune/spell/starter icons load from Google Fonts and Data Dragon; the real site would self-host them. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --bg:#0e0c0c;--surface:#171413;--surface2:#1e1a19;--line:#302826;--text:#f3e9d8;--muted:#b3a28f;--faint:#857566;
+    --gold:#f2c14e;--ember:#e8612c;--bone:#e2d8c6;--red:#e0434b;
+    --display:"Big Shoulders Display","Arial Narrow",sans-serif;--body:Inter,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;color:var(--text);font:14px/1.5 var(--body);background:radial-gradient(800px 360px at 15% -120px,rgba(232,97,44,.16),transparent 70%) no-repeat}
+  img{display:block}
+  button{font:inherit;color:inherit}
+  .mock{position:fixed;right:12px;bottom:12px;z-index:5;font:600 11px var(--mono);color:#1a1405;background:var(--gold);padding:5px 9px;border-radius:4px}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 20px 36px}
+
+  .top{display:flex;align-items:center;gap:24px;height:56px;border-bottom:1px solid var(--line)}
+  .brand{font:900 24px/1 var(--display);letter-spacing:.05em;text-transform:uppercase}
+  .brand i{font-style:normal;color:var(--gold)}
+  .top nav{display:flex;gap:18px;font-size:13px;color:var(--muted)}
+  .top nav b{color:var(--text);font-weight:600}
+  .top .meta{margin-left:auto;font:500 12px var(--mono);color:var(--faint)}
+
+  /* header: identity + three numbers, like u.gg's stat strip */
+  .head{display:flex;align-items:center;gap:28px;padding:16px 0;flex-wrap:wrap}
+  .who{display:flex;align-items:center;gap:12px}
+  .who img{width:56px;height:56px;border-radius:8px;box-shadow:0 0 0 2px var(--c),0 0 20px -6px var(--c)}
+  .who .you{--c:var(--ember)}.who .opp{--c:var(--bone)}
+  .who .nm{font:900 34px/1 var(--display);text-transform:uppercase}
+  .who .nm em{font-style:normal;color:var(--gold)}
+  .who .nm span{font-size:20px;color:var(--faint);margin:0 8px}
+  .who small{display:block;font:500 12px var(--body);color:var(--muted);margin-top:2px}
+  .stat b{display:block;font:600 20px/1.15 var(--mono)}
+  .stat span{font-size:12px;color:var(--muted)}
+  .stat em{font-style:normal;color:var(--gold);font-weight:600}
+  .opps{margin-left:auto;display:flex;gap:6px}
+  .opps a{display:flex;align-items:center;gap:5px;padding:3px 9px 3px 3px;border:1px solid var(--line);border-radius:999px;color:var(--muted);text-decoration:none;font-size:12px}
+  .opps a img{width:20px;height:20px;border-radius:50%}
+  .opps a.on{border-color:var(--gold);color:var(--gold)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .card-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:14px 18px 0}
+  h2{margin:0;font:800 19px var(--display);letter-spacing:.08em;text-transform:uppercase}
+  .card-h p{margin:0;font-size:13px;color:var(--muted)}
+  h3{margin:0 0 8px;font:800 13.5px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  h3 small{font:500 12px var(--body);letter-spacing:0;text-transform:none;color:var(--muted)}
+
+  /* 1 · overview */
+  .ov{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.8fr) minmax(0,1.15fr);gap:0;margin-top:12px;border-top:1px solid var(--line)}
+  .ov>section{padding:14px 18px 16px;min-width:0}
+  .ov>section+section{border-left:1px solid var(--line)}
+  .trees{display:grid;grid-template-columns:1.15fr 1fr;gap:14px}
+  .tree-h{display:flex;align-items:center;gap:7px;font:600 12.5px var(--body);margin-bottom:6px}
+  .tree-h img{width:20px;height:20px}
+  .row{display:flex;justify-content:space-around;align-items:center;padding:5px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  .rn{width:30px;height:30px;border-radius:50%;opacity:.25;filter:grayscale(1)}
+  .row.key .rn{width:38px;height:38px}
+  .rn.on{opacity:1;filter:none;box-shadow:0 0 0 2px var(--gold)}
+  .row.key .rn.on{box-shadow:none;filter:drop-shadow(0 0 8px rgba(242,193,78,.5))}
+  .blk+.blk{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .pk{display:flex;align-items:center;gap:8px}
+  .pk img{width:34px;height:34px;border-radius:5px}
+  .pk b{font-size:13.5px;margin-left:4px}
+  .alt{margin:5px 0 0;font-size:12px;color:var(--faint)}
+  .alt b{color:var(--muted);font-weight:500}
+  .skills{display:flex;align-items:center;gap:6px}
+  .sk{display:grid;place-items:center;width:28px;height:28px;border-radius:5px;background:var(--surface2);border:1px solid var(--line);font:700 13px var(--mono)}
+  .sk.q{border-color:var(--gold);color:var(--gold)}
+  .skills i{color:var(--faint);font-style:normal}
+  .new{font:600 10px var(--mono);color:var(--faint);border:1px dashed var(--faint);border-radius:3px;padding:0 5px;letter-spacing:0}
+  .core{display:flex;align-items:center;gap:6px}
+  .core img{width:44px;height:44px;border-radius:6px}
+  .core i{color:var(--faint);font-style:normal}
+  .core-n{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .core-n b{color:var(--text);font-weight:600}
+  .boots{display:flex;align-items:center;gap:10px}
+  .boots img{width:34px;height:34px;border-radius:5px}
+  .boots b{display:block;font-size:13.5px}
+  .boots span{font-size:12px;color:var(--muted)}
+  .later{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;font-size:12px;color:var(--muted)}
+  .later div{display:flex;gap:4px}
+  .later img{width:28px;height:28px;border-radius:4px}
+
+  /* 2 · timeline */
+  .tl{margin-top:14px;padding-bottom:16px}
+  .paths{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px 0}
+  .path{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);cursor:pointer;text-align:left}
+  .path b{font-size:13px}
+  .path span{font:500 11.5px var(--mono);color:var(--muted)}
+  .path[aria-pressed=true]{border-color:var(--gold);background:rgba(242,193,78,.07)}
+  .path[aria-pressed=true] b{color:var(--gold)}
+  .path.off{cursor:default;opacity:.55;background:none;border-style:dashed}
+  .tl-body{display:grid;grid-template-columns:140px 1fr;gap:16px;padding:12px 18px 0}
+  .lanes{display:grid;grid-template-rows:1fr 1fr;border-right:1px dashed var(--line);padding-right:14px}
+  .lanes>div{display:flex;flex-direction:column;justify-content:center;gap:3px}
+  .lanes b{font:800 13px var(--display);letter-spacing:.14em;text-transform:uppercase}
+  .lanes .you b{color:var(--ember)}.lanes .opp b{color:var(--bone)}
+  .lanes span{font-size:11.5px;color:var(--muted);line-height:1.35}
+  .plot{position:relative;height:290px;overflow:hidden;border-radius:8px}
+  .track{position:absolute;top:0;bottom:0;left:0;width:calc(100% * 40 / var(--span));transform:translateX(calc(var(--start) / 40 * -100%));transition:transform .25s ease}
+  .stage{min-width:0}
+  .scrub{margin-top:10px}
+  .mini{position:relative;height:22px;border-radius:5px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+  .mini i{position:absolute;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%}
+  .mini i.you{background:var(--ember);margin-top:-6px}.mini i.opp{background:var(--bone);margin-top:1px}
+  .mini b{position:absolute;top:0;bottom:0;background:rgba(242,193,78,.18)}
+  .mini b.his{background:rgba(226,216,198,.12)}
+  .mini .view{position:absolute;top:0;bottom:0;border:2px solid var(--gold);border-radius:4px;background:rgba(242,193,78,.06);transition:left .25s ease}
+  .scrub input{width:100%;margin:8px 0 0;accent-color:var(--gold);cursor:pointer}
+  .scrub-l{display:flex;justify-content:space-between;gap:10px;font:500 11.5px var(--mono);color:var(--muted)}
+  .scrub-l b{color:var(--gold);font-weight:600}
+  .axis{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:linear-gradient(90deg,var(--gold),var(--line) 30%)}
+  .tick{position:absolute;top:50%;left:calc(var(--t)*100%);transform:translate(-50%,8px);font:500 10.5px var(--mono);color:var(--faint)}
+  .lane{position:absolute;top:50%;left:0;transform:translateY(-24px);font:600 11.5px var(--body);color:var(--gold);white-space:nowrap}
+  .win{position:absolute;top:0;bottom:0;left:calc(var(--a)*100%);width:calc((var(--b) - var(--a))*100%);background:rgba(242,193,78,.1);border-inline:1px dashed rgba(242,193,78,.45)}
+  .win.his{background:rgba(226,216,198,.07);border-color:rgba(226,216,198,.35)}
+  .win span{position:absolute;top:2px;left:50%;transform:translateX(-50%);font:700 10.5px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);white-space:nowrap}
+  .win.his span{color:var(--bone);top:auto;bottom:2px}
+  .ev{position:absolute;left:calc(var(--t)*100%);display:flex;align-items:center;transform:translateX(-50%);transition:left .35s ease}
+  .ev.you{bottom:50%;flex-direction:column;--c:var(--ember)}
+  .ev.opp{top:50%;flex-direction:column-reverse;--c:var(--bone)}
+  .ev .stem{width:1px;background:var(--c)}
+  .ev.near .stem{height:14px}.ev.far .stem{height:64px}
+  .ev .ic{position:relative}
+  .ev .ic img{width:36px;height:36px;border-radius:6px;box-shadow:0 0 0 2px var(--c)}
+  .ev.boot .ic img{box-shadow:0 0 0 2px var(--c),0 0 0 4px var(--surface),0 0 0 5px var(--c)}
+  .ev .m{position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:6px;font:600 12px var(--mono);white-space:nowrap}
+  .ev .m small{display:block;font:500 10.5px var(--body);color:var(--muted)}
+  .ev.flip .m{left:auto;right:100%;margin:0 6px 0 0;text-align:right}
+  .verdict{margin:12px 18px 0;padding:10px 12px;border-left:3px solid var(--gold);background:var(--surface2);border-radius:0 8px 8px 0;font-size:13.5px}
+  .verdict.bad{border-color:var(--bone)}
+
+  /* 3 · details */
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:14px}
+  .grid .card{padding:14px 16px}
+  .window{display:grid;grid-template-columns:78px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+  .window:first-of-type{border-top:0}
+  .window b{font:600 13px var(--mono);color:var(--gold)}
+  .window.his b{color:var(--bone)}
+  .window p{margin:0;color:var(--muted);font-size:13px}
+  .window p strong{color:var(--text);font-weight:600}
+  .bar{display:grid;grid-template-columns:28px 112px 1fr 58px;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+  .bar:first-of-type{border-top:0}
+  .bar img{width:28px;height:28px;border-radius:4px}
+  .bar .nm{font-size:12.5px;line-height:1.25}
+  .bar .nm small{display:block;font-size:11px;color:var(--muted)}
+  .bar .tr{position:relative;height:20px}
+  .bar .tr::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--faint)}
+  .bar .tr i{position:absolute;top:5px;height:10px;border-radius:2px}
+  .bar .v{text-align:right;font:600 12.5px var(--mono)}
+  .pos{color:var(--gold)}.bar i.pos{background:var(--gold)}
+  .neg{color:var(--red)}.bar i.neg{background:var(--red)}
+  .flat{color:var(--faint)}.bar i.flat{background:var(--faint)}
+  .foot{font-size:12px;color:var(--muted);margin:8px 0 0}
+  .their{display:flex;flex-direction:column;gap:8px}
+  .their div{display:flex;align-items:center;gap:10px;font-size:13px}
+  .their img{width:28px;height:28px;border-radius:4px}
+  .their img.r{border-radius:50%;background:#000}
+  .their span{color:var(--muted)}
+
+  @media(max-width:1100px){.ov{grid-template-columns:1fr 1fr}.ov>section:last-child{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}.grid{grid-template-columns:1fr 1fr}.opps{margin-left:0}}
+  @media(max-width:720px){
+    .wrap{padding:0 14px 30px}.top nav,.top .meta{display:none}
+    .head{gap:14px 22px}.who .nm{font-size:28px}.who img{width:46px;height:46px}.opps{width:100%;overflow-x:auto}
+    .ov{grid-template-columns:1fr}.ov>section+section{border-left:0;border-top:1px solid var(--line)}
+    .tl-body{grid-template-columns:1fr}
+    .lanes{grid-template-rows:none;grid-template-columns:1fr 1fr;gap:12px;border-right:0;border-bottom:1px dashed var(--line);padding:0 0 10px}
+    /* vertical timeline: minutes run down the page, Sett left, Aatrox right */
+    .plot{height:620px;margin:10px 0 0}
+    .track{left:0;right:0;top:0;bottom:auto;width:auto;height:calc(100% * 40 / var(--span));transform:translateY(calc(var(--start) / 40 * -100%))}
+    .axis{left:50%;right:auto;top:0;bottom:0;width:2px;height:auto;margin:0 0 0 -1px;background:linear-gradient(180deg,var(--gold),var(--line) 30%)}
+    .tick{left:50%;top:calc(var(--t)*100%);transform:translate(6px,-50%)}
+    .lane{left:50%;top:0;transform:translateX(8px);white-space:normal;width:44%;line-height:1.3}
+    .win{left:0;right:0;width:auto;top:calc(var(--a)*100%);bottom:auto;height:calc((var(--b) - var(--a))*100%);border-inline:0;border-block:1px dashed rgba(242,193,78,.45)}
+    .win span{display:none}
+    .ev,.ev.you,.ev.opp{left:auto;top:calc(var(--t)*100%);bottom:auto;transform:translateY(-50%);transition:top .35s ease}
+    .ev.you{right:50%;flex-direction:row}
+    .ev.opp{left:50%;flex-direction:row-reverse}
+    .ev .ic img{width:30px;height:30px}.ev .m small{font-size:10px}
+    .ev .stem{height:1px!important}.ev.near .stem{width:12px}.ev.far .stem{width:46px}
+    .ev.you .m{left:auto;right:100%;margin:0 6px 0 0;text-align:right}
+    .ev.opp.flip .m{left:100%;right:auto;margin:0 0 0 6px;text-align:left}
+    .grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="mock">Mockup E · illustrative numbers</div>
+<div class="wrap">
+  <header class="top"><div class="brand">Sett<i>istics</i></div><nav><b>Matchups</b><span>Builds</span><span>Method</span></nav><div class="meta">Top · Patch 26.19 · EUW KR ME TR</div></header>
+
+  <section class="head">
+    <div class="who"><img class="you" src="../../public/ddragon/champion/Sett.png" alt="Sett"><div><div class="nm"><em>Sett</em><span>vs</span>Aatrox</div><small>Top lane · 348 games · fair sample</small></div><img class="opp" src="../../public/ddragon/champion/Aatrox.png" alt="Aatrox"></div>
+    <div class="stat"><b>53.4%</b><span>win rate · <em>+3.6</em> vs Sett's usual</span></div>
+    <div class="stat"><b>+140</b><span>lane gold before the first gank</span></div>
+    <div class="opps"><a href="#"><img src="../../public/ddragon/champion/Darius.png" alt="">Darius</a><a href="#" class="on"><img src="../../public/ddragon/champion/Aatrox.png" alt="">Aatrox</a><a href="#"><img src="../../public/ddragon/champion/Gnar.png" alt="">Gnar</a><a href="#"><img src="../../public/ddragon/champion/Teemo.png" alt="">Teemo</a></div>
+  </section>
+
+  <!-- 1 · the simple overview -->
+  <section class="card">
+    <div class="card-h"><h2>Build vs Aatrox</h2><p>What most Sett players take in this matchup.</p></div>
+    <div class="ov">
+      <section>
+        <h3>Runes <small>Conqueror in 81% · this page in 34%</small></h3>
+        <div class="trees">
+          <div>
+            <div class="tree-h"><img src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/7201_Precision.png" alt="">Precision</div>
+            <div class="row key"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/PressTheAttack/PressTheAttack.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LethalTempo/LethalTempoTemp.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/FleetFootwork/FleetFootwork.png" alt=""><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt="Conqueror" title="Conqueror"></div>
+            <div class="row"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/AbsorbLife/AbsorbLife.png" alt=""><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Triumph.png" alt="Triumph" title="Triumph"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/PresenceOfMind/PresenceOfMind.png" alt=""></div>
+            <div class="row"><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendAlacrity/LegendAlacrity.png" alt="Legend: Alacrity" title="Legend: Alacrity"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendHaste/LegendHaste.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/LegendBloodline/LegendBloodline.png" alt=""></div>
+            <div class="row"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/CoupDeGrace/CoupDeGrace.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/CutDown/CutDown.png" alt=""><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/LastStand/LastStand.png" alt="Last Stand" title="Last Stand"></div>
+          </div>
+          <div>
+            <div class="tree-h"><img src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/7204_Resolve.png" alt="">Resolve</div>
+            <div class="row"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Demolish/Demolish.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/FontOfLife/FontOfLife.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/MirrorShell/MirrorShell.png" alt=""></div>
+            <div class="row"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Conditioning/Conditioning.png" alt=""><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/SecondWind/SecondWind.png" alt="Second Wind" title="Second Wind"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/BonePlating/BonePlating.png" alt=""></div>
+            <div class="row"><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Overgrowth/Overgrowth.png" alt=""><img class="rn" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Resolve/Revitalize/Revitalize.png" alt=""><img class="rn on" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Sorcery/Unflinching/Unflinching.png" alt="Unflinching" title="Unflinching"></div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <div class="blk">
+          <h3>Spells <small>58%</small></h3>
+          <div class="pk"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerDot.png" alt=""><b>Flash + Ignite</b></div>
+          <p class="alt">or <b>Flash + Teleport</b> · 37%</p>
+        </div>
+        <div class="blk">
+          <h3>Start <small>71%</small></h3>
+          <div class="pk"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/1055.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/2003.png" alt=""><b>Doran's Blade + Potion</b></div>
+          <p class="alt">or <b>Doran's Shield + Potion</b> · 22%</p>
+        </div>
+        <div class="blk">
+          <h3>Skills <small>max order</small><span class="new">needs new data</span></h3>
+          <div class="skills"><span class="sk q">Q</span><i>›</i><span class="sk">W</span><i>›</i><span class="sk">E</span></div>
+          <p class="alt">Start W, E, Q · R at 6, 11, 16</p>
+        </div>
+      </section>
+      <section>
+        <div class="blk">
+          <h3>Core build <small>21% of complete cores · 57.1% WR</small></h3>
+          <div class="core"><img src="../../public/ddragon/item/6631.png" alt="Stridebreaker" title="Stridebreaker"><i>›</i><img src="../../public/ddragon/item/3053.png" alt="Sterak's Gage" title="Sterak's Gage"><i>›</i><img src="../../public/ddragon/item/2501.png" alt="Overlord's Bloodmail" title="Overlord's Bloodmail"></div>
+          <div class="core-n"><b>Stridebreaker</b> › Sterak's Gage › Overlord's Bloodmail</div>
+        </div>
+        <div class="blk">
+          <h3>Boots</h3>
+          <div class="boots"><img src="../../public/ddragon/item/3047.png" alt=""><div><b>Plated Steelcaps</b><span>after the first item in 61% of games · before it in 27%</span></div></div>
+        </div>
+        <div class="blk">
+          <h3>Later options</h3>
+          <div class="later">
+            <span>4th</span><div><img src="../../public/ddragon/item/3161.png" alt="Spear of Shojin" title="Spear of Shojin 24%"><img src="../../public/ddragon/item/6333.png" alt="Death's Dance" title="Death's Dance 18%"><img src="../../public/ddragon/item/3075.png" alt="Thornmail" title="Thornmail 12%"></div>
+            <span>5th</span><div><img src="../../public/ddragon/item/6333.png" alt="Death's Dance" title="Death's Dance 19%"><img src="../../public/ddragon/item/3065.png" alt="Spirit Visage" title="Spirit Visage 15%"><img src="../../public/ddragon/item/3143.png" alt="Randuin's Omen" title="Randuin's Omen 11%"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- 2 · the timeline, one build path at a time -->
+  <section class="card tl">
+    <div class="card-h"><h2>Power timeline</h2><p>When each side finishes its items, for one build order at a time. Gold bands: you have the spike and he does not yet.</p></div>
+    <div class="paths" id="paths"></div>
+    <div class="tl-body">
+      <div class="lanes">
+        <div class="you"><b>Sett</b><span id="you-path"></span></div>
+        <div class="opp"><b>Aatrox</b><span>His most common order: boots first (58% of games)</span></div>
+      </div>
+      <div class="stage">
+        <div class="plot" id="plot" style="--span:18;--start:6"><div class="track" id="track"></div></div>
+        <div class="scrub">
+          <div class="mini" id="mini" aria-hidden="true" style="cursor:pointer"></div>
+          <input type="range" id="pan" min="0" max="22" step="0.5" value="6" aria-label="Move through the game">
+          <div class="scrub-l"><span>Showing <b id="span-l"></b></span><span>0′ · · · 40′</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="verdict" id="verdict"></div>
+  </section>
+
+  <!-- 3 · the details -->
+  <section class="grid">
+    <div class="card"><h3>Windows on this path</h3><div id="windows"></div><p class="foot">From average finish times for this build order. Individual games vary by a minute or two.</p></div>
+    <div class="card">
+      <h3>Best second item</h3>
+      <div class="bar"><img src="../../public/ddragon/item/3053.png" alt=""><div class="nm">Sterak's Gage<small>41% of games</small></div><div class="tr"><i class="pos" style="left:50%;width:14%"></i></div><div class="v pos">+2.8 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/2501.png" alt=""><div class="nm">Overlord's Bloodmail<small>15% of games</small></div><div class="tr"><i class="flat" style="left:50%;width:2%"></i></div><div class="v flat">+0.4 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/3071.png" alt=""><div class="nm">Black Cleaver<small>33% of games</small></div><div class="tr"><i class="flat" style="left:47%;width:3%"></i></div><div class="v flat">−0.6 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/3181.png" alt=""><div class="nm">Hullbreaker<small>9% · 61% win rate</small></div><div class="tr"><i class="neg" style="left:32%;width:18%"></i></div><div class="v neg">−3.6 pp</div></div>
+      <p class="foot">Change in win chance vs the average second item. Hullbreaker's 61% comes from being bought when already ahead.</p>
+    </div>
+    <div class="card">
+      <h3>What Aatrox takes</h3>
+      <div class="their">
+        <div><img class="r" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt=""><b>Conqueror</b><span>94%</span></div>
+        <div><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerTeleport.png" alt=""><b>Flash + Teleport</b><span>71%</span></div>
+        <div><img src="../../public/ddragon/item/6692.png" alt=""><b>Eclipse first</b><span>72% of games</span></div>
+        <div><img src="../../public/ddragon/item/3047.png" alt=""><b>Plated Steelcaps</b><span>before Eclipse in 58%</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+// Illustrative, internally consistent numbers. Times are in minutes; each path has its own timings.
+const L='../../public/ddragon/item/';
+const aatrox=[['3047','Steelcaps',8.5,true],['6692','Eclipse',15],['3053',"Sterak's",23],['6333',"Death's Dance",28]];
+const paths={
+  rush:{label:'Stridebreaker first, boots second',share:61,wr:54.9,games:212,
+    items:[['6631','Stridebreaker',12.5],['3047','Steelcaps',14.5,true],['3053',"Sterak's",21],['2501','Bloodmail',26],['3161','Shojin',31],['6333',"Death's Dance",37]],
+    windows:[[12.5,15,'you','Stridebreaker is done, his Eclipse is not.','The best time to force trades or a dive.'],[21,23,'you',"Sterak's Gage lands two minutes before his.",'Your second spike also comes first.']],
+    verdict:'Rushing Stridebreaker gives you a 2½-minute window before his Eclipse. This order wins 54.9% of its 212 games.'},
+  boots:{label:'Boots first',share:27,wr:50.8,games:94,
+    items:[['3047','Steelcaps',8.5,true],['6631','Stridebreaker',16],['3053',"Sterak's",23],['2501','Bloodmail',27.5],['3161','Shojin',32.5],['6333',"Death's Dance",38]],
+    windows:[[15,16,'his','His Eclipse is done, your Stridebreaker is not.','Avoid long trades in this minute.']],
+    verdict:'Boots first costs the early window: Stridebreaker lands about a minute after his Eclipse. This order wins 50.8% of its 94 games.',bad:true}};
+const mmss=m=>`${Math.floor(m)}:${String(Math.round((m%1)*60)).padStart(2,'0')}`;
+const t=m=>(m/40).toFixed(4);
+function ev(side,[id,name,m,boot],i){return`<div class="ev ${side} ${i%2?'near':'far'}${boot?' boot':''}" data-m="${m}" style="--t:${t(m)}"><div class="ic"><img src="${L+id}.png" alt="${name}"><span class="m">${mmss(m)}<small>${name}</small></span></div><i class="stem"></i></div>`;}
+function show(key){
+  const p=paths[key];
+  document.querySelectorAll('.path[data-p]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.p===key)));
+  document.getElementById('you-path').textContent=`${p.label} · ${p.share}% of games`;
+  document.getElementById('track').innerHTML=
+    p.windows.map(([a,b,who])=>`<div class="win ${who==='his'?'his':''}" style="--a:${t(a)};--b:${t(b)}"><span>${who==='his'?'His window':'Your window'}</span></div>`).join('')+
+    '<div class="axis"></div><div class="lane">1v1 lane: Sett +140 gold</div>'+
+    [0,5,10,15,20,25,30,35,40].map(m=>`<div class="tick" style="--t:${t(m)}">${m}′</div>`).join('')+
+    p.items.map((it,i)=>ev('you',it,i)).join('')+aatrox.map((it,i)=>ev('opp',it,i+1)).join('');
+  document.getElementById('windows').innerHTML=p.windows.map(([a,b,who,head,tail])=>`<div class="window ${who==='his'?'his':''}"><b>${mmss(a)}–${mmss(b)}</b><p><strong>${head}</strong> ${tail}</p></div>`).join('');
+  const v=document.getElementById('verdict');v.textContent=p.verdict;v.classList.toggle('bad',!!p.bad);
+  document.getElementById('mini').innerHTML=p.windows.map(([a,b,who])=>`<b class="${who==='his'?'his':''}" style="left:${a/40*100}%;width:${(b-a)/40*100}%"></b>`).join('')+
+    p.items.map(([,,m])=>`<i class="you" style="left:${m/40*100}%"></i>`).join('')+aatrox.map(([,,m])=>`<i class="opp" style="left:${m/40*100}%"></i>`).join('')+'<span class="view" id="view"></span>';
+  pan(document.getElementById('pan').value);
+}
+// Zoomed view: SPAN minutes visible, the slider picks where the view starts.
+const SPAN=18;
+function pan(start){
+  start=Number(start);const end=start+SPAN;
+  document.getElementById('plot').style.setProperty('--start',start);
+  document.getElementById('span-l').textContent=`${start}′–${end}′`;
+  const view=document.getElementById('view');if(view){view.style.left=`${start/40*100}%`;view.style.width=`${SPAN/40*100}%`;}
+  // labels near the right edge of the view flip to the left of their icon
+  document.querySelectorAll('.ev').forEach(e=>e.classList.toggle('flip',Number(e.dataset.m)>end-3.5));
+}
+document.getElementById('pan').oninput=e=>pan(e.target.value);
+document.getElementById('mini').onclick=e=>{const r=e.currentTarget.getBoundingClientRect(),m=(e.clientX-r.left)/r.width*40,s=Math.max(0,Math.min(40-SPAN,Math.round((m-SPAN/2)*2)/2));const inp=document.getElementById('pan');inp.value=s;pan(s);};
+document.getElementById('paths').innerHTML=Object.entries(paths).map(([k,p])=>`<button class="path" data-p="${k}"><b>${p.label}</b><span>${p.share}% of games · ${p.wr}% WR</span></button>`).join('')+
+  '<div class="path off"><b>Boots after the 2nd item</b><span>8% · 28 games, too few to chart</span></div>';
+document.getElementById('paths').onclick=e=>{const b=e.target.closest('[data-p]');if(b)show(b.dataset.p);};
+show(location.hash==='#boots'?'boots':'rush');
+</script>
+</body>
+</html>

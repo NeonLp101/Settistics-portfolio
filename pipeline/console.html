@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settistics Console</title>
+<style>
+  :root{--bg:#0d1118;--panel:#131923;--line:#232c3a;--text:#e9edf3;--muted:#8591a3;--faint:#5b6677;
+    --gold:#d4a23b;--green:#43d6a0;--red:#ff7083;--amber:#f3bd58;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding-inline:16px;padding-block:18px 40px}
+  .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:18px;letter-spacing:.08em;text-transform:uppercase}
+  h1 b{color:var(--gold)}
+  .sub{color:var(--muted);font-size:12px}
+  .live{margin-left:auto;font:12px var(--mono);color:var(--muted)}
+  .live i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}
+  .live.stale i{background:var(--red)}
+  .tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+  .tile,.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .tile{padding:12px 14px}
+  .tile .k{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+  .tile .v{font:600 26px/1.2 var(--mono);margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:11.5px;color:var(--faint)}
+  .grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px}
+  .panel{padding:14px 16px;min-width:0}
+  .panel h2{margin:0 0 10px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .chart{width:100%;height:140px;display:block}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px}
+  .row:first-of-type{border-top:0}
+  .row>span:last-child{font-family:var(--mono);color:var(--muted);text-align:right}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font:600 11px/1.6 var(--mono)}
+  .ok{color:var(--green);background:rgba(67,214,160,.12)}.bad{color:var(--red);background:rgba(255,112,131,.12)}
+  .warn{color:var(--amber);background:rgba(243,189,88,.12)}.neutral{color:var(--muted);background:#1b2330}
+  .status{display:flex;flex-direction:column;gap:9px}
+  .status div{display:flex;align-items:center;gap:10px;justify-content:space-between;font-size:12.5px}
+  .status small{display:block;color:var(--faint);font-size:11.5px}
+  pre{margin:0;font:11.5px/1.55 var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
+.crawler .now{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}.crawler .now b{font-size:15px}.crawler .cd{font:600 20px var(--mono);color:var(--gold);font-variant-numeric:tabular-nums}.bar{height:8px;border-radius:4px;background:#1b2330;overflow:hidden;margin:9px 0 4px}.bar i{display:block;height:100%;background:var(--gold);transition:width .5s}.next{margin-top:10px;display:flex;flex-direction:column;gap:2px}.next .row span:first-child{color:var(--muted)}.crawler .region{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}.crawler .region:first-child{margin-top:0;padding-top:0;border-top:0}
+.crawler .region h3{margin:0 0 6px;font:600 12px var(--mono);color:var(--gold);letter-spacing:.06em}.crawler h2 span{color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none}  .three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .crawler .controls{display:flex;align-items:center;gap:8px;margin:6px 0 8px}.restart{border:1px solid var(--line);border-radius:6px;background:#1b2330;color:var(--text);padding:5px 9px;font:600 11px var(--mono);cursor:pointer}.restart:hover,.restart:focus-visible{border-color:var(--gold);color:var(--gold)}.restart[disabled]{opacity:.55;cursor:wait}.restart-msg{color:var(--muted);font-size:11px}
+  @media(max-width:980px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}.grid,.three{grid-template-columns:1fr}}
+  @media(max-width:520px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1><b>Settistics</b> Console</h1><span class="sub">local only · no player identifiers · refreshes every 10 s</span>
+    <span class="live" id="live"><i></i>connecting…</span></header>
+
+  <section class="tiles">
+    <div class="tile"><div class="k">Games collected</div><div class="v" id="t-done">–</div><div class="s" id="t-done-s"></div></div>
+    <div class="tile"><div class="k">Last hour</div><div class="v" id="t-hour">–</div><div class="s">games saved</div></div>
+    <div class="tile"><div class="k">Queue</div><div class="v" id="t-queue">–</div><div class="s" id="t-queue-s">waiting or other patch</div></div>
+    <div class="tile"><div class="k">Invalid</div><div class="v" id="t-invalid">–</div><div class="s">remakes, wrong queue, missing</div></div>
+    <div class="tile"><div class="k">Player pool</div><div class="v" id="t-seeds">–</div><div class="s" id="t-seeds-s">all regions, rechecked every 2 h</div></div>
+    <div class="tile"><div class="k">Database</div><div class="v" id="t-size">–</div><div class="s">MB on disk</div></div>
+  </section>
+
+  <section class="panel crawler"><h2>Crawlers</h2><div id="crawler"></div></section>
+
+  <section class="grid">
+    <div class="panel"><h2>Games saved per 10 minutes · last 6 hours</h2><svg class="chart" id="chart" role="img" aria-label="Games saved per 10 minutes"></svg></div>
+    <div class="panel"><h2>Health</h2><div class="status" id="health"></div></div>
+  </section>
+
+  <section class="three">
+    <div class="panel"><h2>Patches</h2><div id="patches"></div></div>
+    <div class="panel"><h2>Most collected champions</h2><div id="champs"></div></div>
+    <div class="panel"><h2>Site &amp; model</h2><div id="exports"></div></div>
+  </section>
+
+  <section class="panel"><h2>Crawler log</h2><pre id="log"></pre></section>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=n=>n==null?'–':Number(n).toLocaleString('en-US');
+function ago(iso){if(!iso)return'never';const s=(Date.now()-Date.parse(iso))/1000;
+  return s<60?`${s|0}s ago`:s<3600?`${s/60|0} min ago`:s<86400?`${(s/3600).toFixed(1)} h ago`:`${(s/86400).toFixed(1)} d ago`;}
+const row=(a,b)=>`<div class="row"><span>${a}</span><span>${b}</span></div>`;
+const pill=(cls,t)=>`<span class="pill ${cls}">${esc(t)}</span>`;
+
+function chart(b){
+  const svg=$('chart'),W=svg.clientWidth||600,H=140,pad=18,max=Math.max(4,...b),bw=(W-pad)/b.length;
+  let g=`<line x1="${pad}" x2="${W}" y1="${H-16}" y2="${H-16}" stroke="#232c3a"/>`;
+  g+=`<text x="0" y="12" fill="#5b6677" font-size="10">${max}</text><text x="0" y="${H-18}" fill="#5b6677" font-size="10">0</text>`;
+  b.forEach((v,i)=>{const h=(H-30)*v/max,x=pad+i*bw+1;g+=`<rect x="${x}" y="${H-16-h}" width="${Math.max(1,bw-2)}" height="${h}" rx="2" fill="${i===b.length-1?'#d4a23b':'#6b5a2e'}"><title>${v} games</title></rect>`;});
+  g+=`<text x="${pad}" y="${H-2}" fill="#5b6677" font-size="10">6 h ago</text><text x="${W}" y="${H-2}" fill="#5b6677" font-size="10" text-anchor="end">now</text>`;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML=g;
+}
+
+function render(d){
+  const db=d.db||{status:{},buckets:Array(36).fill(0),patches:[],champions:[],catalogs:[]},st=db.status||{};
+  $('t-done').textContent=num(st.done||0);$('t-done-s').textContent=db.lastSaved?`last saved ${ago(db.lastSaved)}`:'no games yet';
+  $('t-hour').textContent=num(db.lastHour||0);
+  $('t-queue').textContent=num(st.queued||0);$('t-invalid').textContent=num((st.invalid||0)+(st.missing||0));
+  $('t-seeds').textContent=num(d.seeds);
+  {const snow=Object.values(d.pool||{}).reduce((n,p)=>n+p.snowball,0);$('t-seeds-s').textContent=snow?`${num(snow)} added by snowballing`:'all regions, rechecked every 2 h';}
+  $('t-size').textContent=db.sizeMb??'–';
+  chart(db.buckets);
+
+  // Health: key, Data Dragon, loop
+  const k=d.key||{},kcls={ok:'ok',bad:'bad',missing:'bad'}[k.state]||'warn';
+  const collected=db.patches.filter(p=>p.done>0).map(p=>p.patch);
+  const needed=collected.filter(p=>!db.catalogs.includes(p));
+  const dd=d.ddragon||'unknown';
+  const ddLine=needed.length?pill('warn',`waiting: ${needed.join(', ')}`):pill('ok','up to date');
+  const ph=d.log.phase,overdue=ph==='sleeping'&&d.log.nextRound&&Date.now()-Date.parse(d.log.nextRound)>10*60e3;
+  const loop=ph==='crawling'?pill('ok','crawling'):ph==='waiting'?pill('neutral','waiting'):ph==='discovering'?pill('ok','checking players'):ph==='collecting'?pill('ok','downloading games')
+    :ph==='stopped'||overdue?pill('bad','stopped'):pill('neutral','sleeping');
+  const next=ph==='sleeping'&&d.log.nextRound?` · next round ~${new Date(d.log.nextRound).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:'';
+  $('health').innerHTML=
+    `<div><span>API key<small>${esc(k.text||'checking…')}</small></span>${pill(kcls,k.state||'…')}</div>`+
+    `<div><span>Data Dragon<small>newest ${esc(dd)} · item lists: ${esc(db.catalogs.join(', ')||'none')}</small></span>${ddLine}</div>`+
+    (d.crawlers||[]).map(c=>{const p=c.phase;const pl=p==='crawling'?pill('ok','crawling'):p==='waiting'?pill('neutral','waiting'):p==='stopped'?pill('bad','stopped'):p==='discovering'||p==='collecting'?pill('ok',p):pill('neutral',p||'idle');
+      return `<div><span>Crawler ${esc(c.name)}<small>${esc(c.lastRound||'not started')}</small></span>${pl}</div>`;}).join('')+
+    (d.log.progress?`<div><span>Current run<small>${esc(d.log.progress)}</small></span>${pill('neutral','progress')}</div>`:'');
+
+  const pending=`<span class="sub">${db.heavyAt===null?'computing… (reads every stored game, about a minute)':'No games yet.'}</span>`;
+  $('patches').innerHTML=db.patches.length?db.patches.map(p=>row(`Patch ${esc(p.patch)}`,`${num(p.done)} saved / ${num(p.seen)} seen`)).join(''):pending;
+  $('champs').innerHTML=db.champions.length?db.champions.map(c=>row(`${esc(c.champion)} <span class="sub">${esc(c.role.toLowerCase())}</span>`,num(c.games))).join(''):pending;
+  const e=d.exports||{};
+  $('exports').innerHTML=row('Last export',ago(e.export))+row('Last site build',ago(e.site))+row('WPA model trained',ago(e.model))+
+    (e.wpa?row('WPA model',`${num(e.wpa.games)} games · AUC ${e.wpa.auc} · ±${e.wpa.calibration} pp`):'')+
+    row('Regions',Object.entries(db.regions||{}).map(([r,n])=>`${esc(r)} ${num(n)}`).join(' · ')||'–');
+  $('log').textContent=(d.crawlers||[]).map(c=>`[${c.name}]\n`+(c.tail||[]).slice(-9).join('\n')).join('\n\n')||'No log yet.';
+}
+
+// Countdowns update every second from the last server snapshot.
+let crawlers=[];
+function clock(iso){return new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+function left(iso){const s=Math.max(0,(Date.parse(iso)-Date.now())/1000);const h=s/3600|0,m=(s%3600)/60|0,x=s%60|0;
+  return h?`${h}h ${String(m).padStart(2,'0')}m`:`${m}:${String(x).padStart(2,'0')}`;}
+function crawler(){
+  $('crawler').innerHTML=crawlers.length?crawlers.map(c=>`<div class="region"><h3>${esc(c.name)}${c.plan&&c.plan.mode==='crawl'?' · continuous':c.plan&&c.plan.round?` · round ${c.plan.round}`:''}${c.plan&&c.plan.pool&&c.plan.pool.on?' · snowball':''}</h3>${['euw1','kr'].includes(c.platform)?`<div class="controls"><button class="restart" type="button" data-restart="${c.platform}">Restart ${c.platform==='euw1'?'EUW':'KR'}</button><span class="restart-msg" data-restart-msg="${c.platform}">${esc(restartMsg[c.platform]||'')}</span></div>`:''}${crawlerBlock(c.plan)}${poolLine(c.plan)}</div>`).join(''):'<span class="sub">No crawler log yet.</span>';
+  document.querySelectorAll('[data-restart]').forEach(button=>button.addEventListener('click',()=>restartCrawler(button)));
+}
+// crawler() redraws every second, so the restart message lives here rather than in the DOM
+const restartMsg={};
+async function restartCrawler(button){
+  const platform=button.dataset.restart;
+  if(!confirm(`Restart the ${platform==='euw1'?'EUW':'KR'} crawler? Its current process will be stopped and started again.`))return;
+  button.disabled=true;restartMsg[platform]='restarting…';crawler();
+  try{const res=await fetch(`/api/crawler/${platform}/restart`,{method:'POST'}),body=await res.json().catch(()=>({}));if(!res.ok||!body.ok)throw new Error(body.message||`HTTP ${res.status}`);restartMsg[platform]=`started (PID ${body.pid})`;setTimeout(tick,1000);}
+  catch(error){restartMsg[platform]=`failed: ${error.message}`;}
+  crawler();
+}
+function poolLine(plan){
+  const p=plan&&plan.pool;if(!p)return'';
+  return `<div class="next"><div class="row"><span>Player pool <span class="sub">(${num(p.total-p.snowball)} seeds + ${num(p.snowball)} from snowballing)</span></span><span>${num(p.total)} · ${num(p.unchecked)} not checked yet</span></div></div>`;
+}
+function crawlerBlock(plan){
+  if(!plan||!plan.steps||!plan.steps.length)return'<span class="sub">Not running.</span>';
+  const [cur,...rest]=plan.steps;
+  const active=cur.total!=null||cur.current;
+  let html='';
+  if(cur.total!=null){const p=cur.total?Math.min(100,100*cur.done/cur.total):0;
+    html+=`<div class="now"><b>Now: ${esc(cur.label)}</b><span class="cd">${left(cur.until)}</span></div>
+      <div class="bar"><i style="width:${p}%"></i></div>
+      <div class="sub">${num(cur.done)} / ${num(cur.total)}${cur.estimated?' (estimated from elapsed time)':''} · done ~${clock(cur.until)}</div>`;}
+  else if(cur.current){html+=`<div class="now"><b>Now: ${esc(cur.label)}</b>${cur.until?`<span class="cd">${left(cur.until)}</span>`:''}</div>
+      <div class="sub">${cur.sub?esc(cur.sub):cur.until?`next round starts ~${clock(cur.until)}`:''}</div>`;}
+  const upcoming=(cur.current?rest:rest.length?rest:[]).concat(cur.total==null&&!cur.current?[cur]:[]);
+  html+=`<div class="next">${upcoming.map(s=>`<div class="row"><span>Then: ${esc(s.label)}${s.note?` <span class="sub">(${esc(s.note)})</span>`:''}</span><span>${s.at?`~${clock(s.at)} · in ${left(s.at)}`:''}</span></div>`).join('')}
+    ${plan.keyExpires?`<div class="row"><span>API key expires <span class="sub">(24 h after .env was saved)</span></span><span>~${clock(plan.keyExpires)} · in ${left(plan.keyExpires)}</span></div>`:''}</div>`;
+  return html;
+}
+setInterval(crawler,1000);
+
+async function tick(){
+  const live=$('live');
+  try{const d=await (await fetch('/api/status',{cache:'no-store'})).json();render(d);crawlers=d.crawlers||[];crawler();
+    live.className='live';live.innerHTML=`<i></i>updated ${new Date().toLocaleTimeString()}`;}
+  catch{live.className='live stale';live.innerHTML='<i></i>console server not reachable';}
+}
+tick();setInterval(tick,10000);
+</script>
+</body>
+</html>

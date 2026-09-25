@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C · Power Timeline</title>
+<!-- Mockup only. Direction C: the matchup as a timeline of both champions' power spikes, keeping the current ember/bone brand.
+     Fonts and rune/spell/starter icons load from Google Fonts and Data Dragon; the real site would self-host them. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --bg:#0e0c0c;--surface:#171413;--surface2:#1e1a19;--line:#302826;--text:#f3e9d8;--muted:#b3a28f;--faint:#857566;
+    --gold:#f2c14e;--ember:#e8612c;--bone:#e2d8c6;--red:#e0434b;
+    --display:"Big Shoulders Display","Arial Narrow",sans-serif;--body:Inter,system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--body);
+    background-image:radial-gradient(800px 360px at 15% -120px,rgba(232,97,44,.16),transparent 70%);background-repeat:no-repeat}
+  img{display:block}
+  .mock{position:fixed;right:12px;bottom:12px;z-index:5;font:600 11px var(--mono);color:#1a1405;background:var(--gold);padding:5px 9px;border-radius:4px}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+
+  .top{display:flex;align-items:center;gap:24px;height:58px;border-bottom:1px solid var(--line)}
+  .brand{font:900 24px/1 var(--display);letter-spacing:.05em;text-transform:uppercase}
+  .brand i{font-style:normal;color:var(--gold)}
+  .top nav{display:flex;gap:18px;font-size:13px;color:var(--muted)}
+  .top nav b{color:var(--text);font-weight:600}
+  .top .meta{margin-left:auto;font:500 12px var(--mono);color:var(--faint)}
+
+  /* compact matchup header */
+  .head{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;padding:18px 0}
+  .side{display:flex;align-items:center;gap:14px}
+  .side.opp{flex-direction:row-reverse;text-align:right}
+  .side img{width:64px;height:64px;border-radius:8px;box-shadow:0 0 0 2px var(--c),0 0 24px -6px var(--c)}
+  .side.you{--c:var(--ember)}.side.opp{--c:var(--bone)}
+  .side .nm{font:900 44px/.95 var(--display);text-transform:uppercase}
+  .side.you .nm{color:var(--gold)}
+  .side small{display:block;font-size:12px;color:var(--muted)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .chip{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);text-align:center}
+  .chip b{display:block;font:600 17px/1.1 var(--mono)}
+  .chip span{font-size:11.5px;color:var(--muted)}
+  .chip em{font-style:normal;color:var(--gold)}
+
+  /* the timeline */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tl{padding:16px 20px 18px}
+  .tl-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h2{margin:0;font:800 19px var(--display);letter-spacing:.08em;text-transform:uppercase}
+  .tl-h p{margin:0;font-size:13px;color:var(--muted)}
+  .tl-body{display:grid;grid-template-columns:150px 1fr;gap:18px}
+  .start{display:grid;grid-template-rows:1fr 1fr;border-right:1px dashed var(--line);padding-right:16px}
+  .start>div{display:flex;flex-direction:column;justify-content:center;gap:6px}
+  .start .who{font:800 13px var(--display);letter-spacing:.14em;text-transform:uppercase}
+  .start .you .who{color:var(--ember)}.start .opp .who{color:var(--bone)}
+  .start .ics{display:flex;gap:4px}
+  .start .ics img{width:28px;height:28px;border-radius:5px}
+  .start .ics img.r{border-radius:50%;background:#000}
+  .start small{font-size:11.5px;color:var(--muted);line-height:1.35}
+
+  .plot{position:relative;height:300px;margin:0 22px 0 6px}
+  .axis{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:linear-gradient(90deg,var(--gold),var(--line) 30%)}
+  .tick{position:absolute;top:50%;left:calc(var(--t)*100%);transform:translate(-50%,8px);font:500 10.5px var(--mono);color:var(--faint)}
+  .lane{position:absolute;top:50%;left:0;transform:translateY(-24px);font:600 11.5px var(--body);color:var(--gold);white-space:nowrap}
+  .win{position:absolute;top:0;bottom:0;left:calc(var(--a)*100%);width:calc((var(--b) - var(--a))*100%);background:rgba(242,193,78,.1);border-inline:1px dashed rgba(242,193,78,.45)}
+  .win span{position:absolute;top:2px;left:50%;transform:translateX(-50%);font:700 10.5px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);white-space:nowrap}
+  .ev{position:absolute;left:calc(var(--t)*100%);display:flex;align-items:center;transform:translateX(-50%)}
+  .ev.you{bottom:50%;flex-direction:column}
+  .ev.opp{top:50%;flex-direction:column-reverse}
+  .ev .stem{width:1px;background:var(--c)}
+  .ev.you{--c:var(--ember)}.ev.opp{--c:var(--bone)}
+  .ev.near .stem{height:14px}.ev.far .stem{height:66px}
+  .ev .ic{position:relative}
+  .ev .ic img{width:38px;height:38px;border-radius:6px;box-shadow:0 0 0 2px var(--c)}
+  .ev .m{position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:6px;font:600 12px var(--mono);white-space:nowrap}
+  .ev .m small{display:block;font:500 10.5px var(--body);color:var(--muted)}
+
+  /* below the timeline */
+  .grid{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:14px;margin:14px 0 30px}
+  .grid .card{padding:14px 16px}
+  h3{margin:0 0 10px;font:800 15px var(--display);letter-spacing:.1em;text-transform:uppercase}
+  .window{display:grid;grid-template-columns:62px 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .window:first-of-type{border-top:0}
+  .window b{font:600 14px var(--mono);color:var(--gold)}
+  .window p{margin:0;color:var(--muted);font-size:13px}
+  .window p strong{color:var(--text);font-weight:600}
+  .lo{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+  .lo:first-of-type{border-top:0}
+  .lo .ics{display:flex;gap:4px}
+  .lo .ics img{width:30px;height:30px;border-radius:5px}
+  .lo .ics img.r{border-radius:50%;background:#000}
+  .lo b{display:block;font-size:13.5px}
+  .lo span{font-size:12px;color:var(--muted)}
+  .bar{display:grid;grid-template-columns:30px 118px 1fr 64px;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+  .bar:first-of-type{border-top:0}
+  .bar img{width:30px;height:30px;border-radius:5px}
+  .bar .tr{position:relative;height:22px}
+  .bar .tr::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--faint)}
+  .bar .tr i{position:absolute;top:6px;height:10px;border-radius:2px}
+  .bar .nm{font-size:13px;line-height:1.25}
+  .bar .nm small{display:block;font-size:11.5px;color:var(--muted)}
+  .bar .v{text-align:right;font:600 13px var(--mono)}
+  .pos{color:var(--gold)}.pos i,.bar i.pos{background:var(--gold)}
+  .neg{color:var(--red)}.bar i.neg{background:var(--red)}
+  .flat{color:var(--faint)}.bar i.flat{background:var(--faint)}
+  .foot{font-size:12px;color:var(--muted);margin:8px 0 0}
+
+  @media(max-width:1000px){.grid{grid-template-columns:1fr 1fr}.grid .card:last-child{grid-column:1/-1}}
+  @media(max-width:720px){
+    .wrap{padding:0 14px}.top nav,.top .meta{display:none}
+    .head{grid-template-columns:1fr;gap:12px}.side.opp{flex-direction:row;text-align:left}.side .nm{font-size:34px}.side img{width:52px;height:52px}
+    .chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.chip{padding:6px}.chip b{font-size:15px}.chip span{font-size:10.5px}
+    .tl{padding:14px}
+    .tl-body{grid-template-columns:1fr}
+    .start{grid-template-rows:none;grid-template-columns:1fr 1fr;gap:12px;border-right:0;border-bottom:1px dashed var(--line);padding:0 0 12px}
+    /* the timeline turns vertical: minutes run down the page, Sett left, Aatrox right */
+    .plot{height:760px;margin:10px 0 0}
+    .axis{left:50%;right:auto;top:0;bottom:0;width:2px;height:auto;margin:0 0 0 -1px;background:linear-gradient(180deg,var(--gold),var(--line) 30%)}
+    .tick{left:50%;top:calc(var(--t)*100%);transform:translate(6px,-50%)}
+    .lane{left:50%;top:0;transform:translateX(8px);white-space:normal;width:44%;line-height:1.3}
+    .win{left:0;right:0;width:auto;top:calc(var(--a)*100%);bottom:auto;height:calc((var(--b) - var(--a))*100%);border-inline:0;border-block:1px dashed rgba(242,193,78,.45)}
+    .win span{display:none}
+    .ev,.ev.you,.ev.opp{left:auto;top:calc(var(--t)*100%);bottom:auto;transform:translateY(-50%)}
+    .ev.you{right:50%;flex-direction:row}
+    .ev.opp{left:50%;flex-direction:row-reverse}
+    .ev .ic img{width:32px;height:32px}.ev .m small{font-size:10px}
+    .ev .stem{height:1px!important}.ev.near .stem{width:12px}.ev.far .stem{width:46px}
+    .ev.you .m{left:auto;right:100%;margin:0 6px 0 0;text-align:right}
+    .grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="mock">Mockup C · illustrative numbers</div>
+<div class="wrap">
+  <header class="top"><div class="brand">Sett<i>istics</i></div><nav><b>Matchups</b><span>Builds</span><span>Method</span></nav><div class="meta">Top · Patch 26.19 · EUW KR ME TR</div></header>
+
+  <section class="head">
+    <div class="side you"><img src="../../public/ddragon/champion/Sett.png" alt="Sett"><div><div class="nm">Sett</div><small>your champion</small></div></div>
+    <div class="chips">
+      <div class="chip"><b>53.4%</b><span>win rate · <em>+3.6</em> vs usual</span></div>
+      <div class="chip"><b>+140</b><span>lane gold, 1v1</span></div>
+      <div class="chip"><b>348</b><span>games · fair sample</span></div>
+    </div>
+    <div class="side opp"><img src="../../public/ddragon/champion/Aatrox.png" alt="Aatrox"><div><div class="nm">Aatrox</div><small>lane opponent</small></div></div>
+  </section>
+
+  <section class="card tl">
+    <div class="tl-h"><h2>Power timeline</h2><p>When each side usually finishes its items. Gold bands are where you have a spike and he does not yet.</p></div>
+    <div class="tl-body">
+      <div class="start">
+        <div class="you"><span class="who">Sett starts</span>
+          <div class="ics"><img class="r" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt="Conqueror"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt="Flash"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerDot.png" alt="Ignite"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/1055.png" alt="Doran's Blade"></div>
+          <small>Conqueror · Flash + Ignite · Doran's Blade</small></div>
+        <div class="opp"><span class="who">Aatrox starts</span>
+          <div class="ics"><img class="r" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt="Conqueror"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt="Flash"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerTeleport.png" alt="Teleport"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/1055.png" alt="Doran's Blade"></div>
+          <small>Conqueror · Flash + Teleport · Doran's Blade</small></div>
+      </div>
+
+      <div class="plot">
+        <div class="win" style="--a:.325;--b:.375"><span>Your window</span></div>
+        <div class="win" style="--a:.525;--b:.575"><span>Your window</span></div>
+        <div class="axis"></div>
+        <div class="lane">Lane 1v1 · Sett +140 gold until the first gank</div>
+        <div class="tick" style="--t:0">0′</div><div class="tick" style="--t:.25">10′</div><div class="tick" style="--t:.5">20′</div><div class="tick" style="--t:.75">30′</div><div class="tick" style="--t:1">40′</div>
+
+        <div class="ev you far" style="--t:.325"><div class="ic"><img src="../../public/ddragon/item/6631.png" alt="Stridebreaker"><span class="m">13′<small>Stridebreaker</small></span></div><i class="stem"></i></div>
+        <div class="ev you near" style="--t:.35"><div class="ic"><img src="../../public/ddragon/item/3047.png" alt="Plated Steelcaps"><span class="m">14′</span></div><i class="stem"></i></div>
+        <div class="ev you far" style="--t:.525"><div class="ic"><img src="../../public/ddragon/item/3053.png" alt="Sterak's Gage"><span class="m">21′<small>Sterak's</small></span></div><i class="stem"></i></div>
+        <div class="ev you near" style="--t:.65"><div class="ic"><img src="../../public/ddragon/item/2501.png" alt="Overlord's Bloodmail"><span class="m">26′<small>Bloodmail</small></span></div><i class="stem"></i></div>
+        <div class="ev you far" style="--t:.775"><div class="ic"><img src="../../public/ddragon/item/3161.png" alt="Spear of Shojin"><span class="m">31′<small>Shojin</small></span></div><i class="stem"></i></div>
+        <div class="ev you near" style="--t:.925"><div class="ic"><img src="../../public/ddragon/item/6333.png" alt="Death's Dance"><span class="m">37′</span></div><i class="stem"></i></div>
+
+        <div class="ev opp near" style="--t:.3"><div class="ic"><img src="../../public/ddragon/item/3047.png" alt="Plated Steelcaps"><span class="m">12′</span></div><i class="stem"></i></div>
+        <div class="ev opp far" style="--t:.375"><div class="ic"><img src="../../public/ddragon/item/6692.png" alt="Eclipse"><span class="m">15′<small>Eclipse</small></span></div><i class="stem"></i></div>
+        <div class="ev opp far" style="--t:.575"><div class="ic"><img src="../../public/ddragon/item/3053.png" alt="Sterak's Gage"><span class="m">23′<small>Sterak's</small></span></div><i class="stem"></i></div>
+        <div class="ev opp near" style="--t:.7"><div class="ic"><img src="../../public/ddragon/item/6333.png" alt="Death's Dance"><span class="m">28′<small>Death's Dance</small></span></div><i class="stem"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h3>Your windows</h3>
+      <div class="window"><b>13–15′</b><p><strong>Stridebreaker is done, his Eclipse is not.</strong> The best time to force trades or a dive.</p></div>
+      <div class="window"><b>21–23′</b><p><strong>Sterak's Gage lands about two minutes before his.</strong> Your second spike also arrives first.</p></div>
+      <p class="foot">From average finish times in 348 games. Individual games vary by a few minutes.</p>
+    </div>
+    <div class="card">
+      <h3>Champ select</h3>
+      <div class="lo"><div class="ics"><img class="r" src="https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Precision/Conqueror/Conqueror.png" alt=""></div><div><b>Conqueror</b><span>Triumph · Alacrity · Last Stand · Resolve: Second Wind, Unflinching · 81%</span></div></div>
+      <div class="lo"><div class="ics"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerFlash.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/spell/SummonerDot.png" alt=""></div><div><b>Flash + Ignite</b><span>58% · Teleport in 37%</span></div></div>
+      <div class="lo"><div class="ics"><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/1055.png" alt=""><img src="https://ddragon.leagueoflegends.com/cdn/16.19.1/img/item/2003.png" alt=""></div><div><b>Doran's Blade + Potion</b><span>71% · Doran's Shield in 22%</span></div></div>
+    </div>
+    <div class="card">
+      <h3>Best second item</h3>
+      <div class="bar"><img src="../../public/ddragon/item/3053.png" alt=""><div class="nm">Sterak's Gage<small>41% of games</small></div><div class="tr"><i class="pos" style="left:50%;width:14%"></i></div><div class="v pos">+2.8 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/2501.png" alt=""><div class="nm">Overlord's Bloodmail<small>15% of games</small></div><div class="tr"><i class="flat" style="left:50%;width:2%"></i></div><div class="v flat">+0.4 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/3071.png" alt=""><div class="nm">Black Cleaver<small>33% of games</small></div><div class="tr"><i class="flat" style="left:47%;width:3%"></i></div><div class="v flat">−0.6 pp</div></div>
+      <div class="bar"><img src="../../public/ddragon/item/3181.png" alt=""><div class="nm">Hullbreaker<small>9% · 61% win rate</small></div><div class="tr"><i class="neg" style="left:32%;width:18%"></i></div><div class="v neg">−3.6 pp</div></div>
+      <p class="foot">Change in win chance vs the average second item. Hullbreaker wins 61% of games, but only because it is bought when already ahead.</p>
+    </div>
+  </section>
+</div>
+</body>
+</html>

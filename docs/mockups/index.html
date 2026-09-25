@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settistics Directions</title>
+<!-- Side-by-side comparison of the design directions. Each preview is the live mockup, scaled down. -->
+<style>
+  :root{--bg:#0f0f10;--panel:#18181a;--line:#2a2a2e;--ink:#ececef;--muted:#a1a1aa;--accent:#f2c14e}
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0;color:var(--ink);font:14px/1.55 Inter,system-ui,sans-serif}
+  .wrap{max-width:1320px;margin:0 auto;padding:28px 20px 40px}
+  h1{margin:0;font-size:24px;font-weight:700}
+  .lede{margin:6px 0 22px;color:var(--muted);max-width:75ch}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+  .shot{position:relative;aspect-ratio:1366/820;overflow:hidden;border-bottom:1px solid var(--line);background:#000}
+  .shot iframe{position:absolute;left:0;top:0;width:1366px;height:820px;border:0;transform-origin:0 0;pointer-events:none}
+  .body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:8px;flex:1}
+  .t{display:flex;align-items:baseline;gap:10px}
+  .t b{font:700 12px ui-monospace,monospace;color:#1a1405;background:var(--accent);border-radius:4px;padding:1px 7px}
+  .t h2{margin:0;font-size:17px}
+  .idea{margin:0}
+  dl{display:grid;grid-template-columns:92px 1fr;gap:4px 12px;margin:2px 0 0;font-size:13px}
+  dt{color:var(--muted)}
+  dd{margin:0}
+  a.open{margin-top:auto;align-self:flex-start;color:var(--accent);text-decoration:none;font-weight:600}
+  a.open:hover{text-decoration:underline}
+  .current{margin-top:18px;color:var(--muted);font-size:13px}
+  .current a{color:var(--ink)}
+  .card.feature{grid-column:1/-1;border-color:var(--accent)}
+  .card.feature .shot{aspect-ratio:1366/1000}
+  .card.feature .shot iframe{height:1000px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Settistics · design directions</h1>
+  <p class="lede">Design ideas for the matchup page, all showing the same Sett vs Aatrox content with illustrative numbers, so only the design differs. Each one also works on a phone. Click a card to open it full size.</p>
+  <div class="grid">
+    <article class="card feature">
+      <div class="shot"><iframe src="f-matchup-guide.html" tabindex="-1" title="Preview F"></iframe></div>
+      <div class="body">
+        <div class="t"><b>F</b><h2>The matchup guide</h2></div>
+        <p class="idea">E developed into one connected guide: a short matchup summary, compact setup, selectable build routes, item timing, and slot comparisons. Warm ember and gold, with a quieter overview and a more prominent build.</p>
+        <dl><dt>Try it</dt><dd>Switch between item-first and boots-first, select any build item, or preview a matchup with limited data.</dd><dt>Data</dt><dd>Illustrative numbers throughout. Route-specific timings and adjusted comparisons require an extended export.</dd></dl>
+        <a class="open" href="f-matchup-guide.html">Open F →</a>
+      </div>
+    </article>
+    <article class="card feature">
+      <div class="shot"><iframe src="e-overview-timeline.html" tabindex="-1" title="Preview E"></iframe></div>
+      <div class="body">
+        <div class="t"><b>E</b><h2>Overview + timeline (chosen)</h2></div>
+        <p class="idea">A simple u.gg-style build overview on top (runes, spells, start, skills, core, boots, later options), the power timeline below it, details last. The timeline shows one build order at a time, so boots-first and Stridebreaker-first games are never averaged together.</p>
+        <dl><dt>Needs</dt><dd>Item finish times split by build order (boots before or after the 1st item), skill order, and self-hosted rune and spell icons.</dd></dl>
+        <a class="open" href="e-overview-timeline.html">Open E →</a>
+      </div>
+    </article>
+    <article class="card">
+      <div class="shot"><iframe src="a-cheat-sheet.html" tabindex="-1" title="Preview A"></iframe></div>
+      <div class="body">
+        <div class="t"><b>A</b><h2>Cheat sheet</h2></div>
+        <p class="idea">Everything you set in champ select on one screen, in the order you set it, drawn like the League client (rune tree, spell and item icons).</p>
+        <dl><dt>Best for</dt><dd>The 30 seconds in champ select. Fastest to use.</dd><dt>Trade-off</dt><dd>Little room for explanation. Looks like the u.gg family.</dd></dl>
+        <a class="open" href="a-cheat-sheet.html">Open A →</a>
+      </div>
+    </article>
+    <article class="card">
+      <div class="shot"><iframe src="b-scouting-report.html" tabindex="-1" title="Preview B"></iframe></div>
+      <div class="body">
+        <div class="t"><b>B</b><h2>Scouting report</h2></div>
+        <p class="idea">The matchup as a short sports write-up: a verdict headline, three things to know, then the setup, build and evidence as figures. Light, editorial type.</p>
+        <dl><dt>Best for</dt><dd>Understanding why. Most distinctive; no LoL site looks like this.</dd><dt>Trade-off</dt><dd>Slower to scan in champ select; the words must be generated well.</dd></dl>
+        <a class="open" href="b-scouting-report.html">Open B →</a>
+      </div>
+    </article>
+    <article class="card">
+      <div class="shot"><iframe src="c-power-timeline.html" tabindex="-1" title="Preview C"></iframe></div>
+      <div class="body">
+        <div class="t"><b>C</b><h2>Power timeline</h2></div>
+        <p class="idea">Both champions' item spikes on one 0–40 minute timeline, with gold bands where you are ahead. Keeps today's ember and bone brand. Turns vertical on phones.</p>
+        <dl><dt>Best for</dt><dd>Showing the matchup at a glance, using data only Settistics has (both sides' timings).</dd><dt>Trade-off</dt><dd>Needs enough games for stable timings; busy with many items.</dd></dl>
+        <a class="open" href="c-power-timeline.html">Open C →</a>
+      </div>
+    </article>
+    <article class="card">
+      <div class="shot"><iframe src="d-stat-desk.html" tabindex="-1" title="Preview D"></iframe></div>
+      <div class="body">
+        <div class="t"><b>D</b><h2>Stat desk</h2></div>
+        <p class="idea">Dense tables for every decision: pick rate, win rate, games and measured impact side by side, plus observed vs expected win rate for items.</p>
+        <dl><dt>Best for</dt><dd>Players who want the numbers; shows off the WPA method best.</dd><dt>Trade-off</dt><dd>Least welcoming for casual players; Lolalytics already owns this style.</dd></dl>
+        <a class="open" href="d-stat-desk.html">Open D →</a>
+      </div>
+    </article>
+  </div>
+  <p class="current">For reference, the current direction: <a href="fight-card.html">fight card mockup</a>.</p>
+</div>
+<script>
+// Scale each full-size preview to its card width.
+const fit=()=>document.querySelectorAll('.shot').forEach(s=>{s.querySelector('iframe').style.transform=`scale(${s.clientWidth/1366})`;});
+addEventListener('resize',fit);fit();
+</script>
+</body>
+</html>
