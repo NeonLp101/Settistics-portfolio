@@ -1,7 +1,7 @@
 // Visitors download a small index plus only the champion they look at.
 // data/public/stats.json can outgrow V8's maximum string length (~512 MiB), so a large export is read
 // as bytes and every bucket is parsed on its own; shards are then built one champion at a time.
-import {lstat,mkdir,readFile,readdir,realpath,rm,stat,writeFile} from 'node:fs/promises';
+import {lstat,mkdir,open,readFile,readdir,realpath,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {basename,dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {validateRelease} from './aggregate-schema.mjs';
@@ -59,8 +59,16 @@ async function readBase(path,streamAbove){
   try{size=(await stat(path)).size;}
   catch(error){if(error.code!=='ENOENT')throw error;return {base:{schemaVersion:2,status:'empty',wpaStatus:'unavailable',uniqueMatches:0,sources:[],buckets:[]},count:0,streamed:false};}
   if(size<=streamAbove){const base=JSON.parse(await readFile(path,'utf8'));return {base,count:base.buckets?.length,at:i=>base.buckets[i],streamed:false};}
-  const buf=await readFile(path),{meta,ranges}=splitStats(buf);
+  const buf=await readLarge(path,size),{meta,ranges}=splitStats(buf);
   return {base:meta,count:ranges.length,at:i=>JSON.parse(buf.toString('utf8',ranges[i][0],ranges[i][1])),streamed:true};
+}
+
+// readFile refuses anything over 2 GiB; a Buffer itself can be far larger.
+async function readLarge(path,size){
+  const buf=Buffer.allocUnsafe(size),fh=await open(path,'r');
+  try{for(let at=0;at<size;){const {bytesRead}=await fh.read(buf,at,Math.min(2**30,size-at),at);if(!bytesRead)throw new Error(`${path} shrank while reading`);at+=bytesRead;}}
+  finally{await fh.close();}
+  return buf;
 }
 
 export async function buildData({stats:statsPath='data/public/stats.json',imports:importDir='data/imports',out='public/data',streamAbove=STREAM_ABOVE,now=new Date()}={}){
@@ -88,7 +96,7 @@ export async function buildData({stats:statsPath='data/public/stats.json',import
   }
   // Raw buckets first, then imports, exactly as a single in-memory list would be ordered.
   const total=count+imported.length,bucket=j=>{if(j>=count)return imported[j-count];const b=at(j);return {...b,sourceId:b.sourceId||rawId};};
-  const meta={schemaVersion:2,status:total?'observed':'empty',generatedAt:now.toISOString(),wpaStatus:base.wpaStatus||'unavailable',wpaModel:base.wpaModel||null,laneModel:base.laneModel||null,reliability:base.reliability||null,pooledEffects:base.pooledEffects||null,itemDataMissing:base.itemDataMissing||[],itemDataProvisional:base.itemDataProvisional||{},rankStatus:base.rankStatus||'unavailable',samplePolicy:base.samplePolicy||'Source-specific sampling; inspect provenance.',uniqueMatches:Number(base.uniqueMatches)||0,sources};
+  const meta={schemaVersion:2,status:total?'observed':'empty',generatedAt:now.toISOString(),wpaStatus:base.wpaStatus||'unavailable',wpaModel:base.wpaModel||null,laneModel:base.laneModel||null,reliability:base.reliability||null,pooledEffects:base.pooledEffects||null,itemDataMissing:base.itemDataMissing||[],itemDataProvisional:base.itemDataProvisional||{},rankStatus:base.rankStatus||'unavailable',samplePolicy:base.samplePolicy||'Source-specific sampling; inspect provenance.',uniqueMatches:Number(base.uniqueMatches)||0,firstObjectives:base.firstObjectives||null,sources};
   const coverage=new Map(),byChampion=new Map(),patches=new Set(),regions=new Set();
   for(let j=0;j<total;j++){
     const b=bucket(j);

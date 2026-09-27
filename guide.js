@@ -1,7 +1,7 @@
 // The live matchup guide. All statistics come from the selected public export.
 let guideAssets={};
 const guideLoadErrors=new Map();
-const guideState={path:null,slot:'slot2',view:'build',setupFolded:false,setupMore:false};
+const guideState={path:null,route:null,slot:'slot2',view:'build',setupFolded:false,setupMore:false};
 try{guideState.setupFolded=localStorage.getItem('settistics-setup-folded')==='1';guideState.setupMore=localStorage.getItem('settistics-setup-more')==='1';}catch{}
 const GUIDE_MIN=30,GUIDE_TIMING_MIN=15;
 const guideSlots=[['slot1','1st item'],['boots','Boots'],['slot2','2nd item'],['slot3','3rd item'],['slot4','4th item'],['slot5','5th item']];
@@ -25,27 +25,69 @@ const guideStepLabel={component:'First buy',slot1:'1st item',boots:'Boots',slot2
 function guideBuilds(buckets){
   const out=new Map();
   for(const b of buckets)for(const w of b.builds||[]){
-    const m=out.get(w.id)||{id:w.id,items:w.items,names:w.names,games:0,wins:0,timeSum:[0,0,0],components:{},boots:{}};
+    const m=out.get(w.id)||{id:w.id,items:w.items,names:w.names,games:0,wins:0,timeSum:[0,0,0],components:{},boots:{},routes:w.routes?{}:null};
     m.games+=w.games;m.wins+=w.wins;w.timeSum.forEach((t,i)=>m.timeSum[i]+=t);
     for(const key of ['components','boots'])for(const [k,v] of Object.entries(w[key]||{})){const t=m[key][k]||(m[key][k]={name:v.name,games:0,wins:0,timeSum:0});t.games+=v.games;t.wins+=v.wins;t.timeSum+=v.timeSum;}
+    // Same route key = same cohort definition, so summing across patches, regions and opponents stays one cohort.
+    // A bucket from an older export without routes makes the merged timings incomplete: drop them rather than mix.
+    if(!w.routes)m.routes=null;
+    else if(m.routes)for(const [k,v] of Object.entries(w.routes)){const t=m.routes[k]||(m.routes[k]={bootsName:v.bootsName,componentName:v.componentName,games:0,timeSum:[0,0,0],bootsTimeSum:0,componentTimeSum:0});
+      t.games+=v.games;v.timeSum.forEach((x,i)=>t.timeSum[i]+=x);t.bootsTimeSum+=v.bootsTimeSum;t.componentTimeSum+=v.componentTimeSum;}
     out.set(w.id,m);
   }
   return [...out.values()];
 }
 const guideTop=obj=>Object.entries(obj||{}).sort((a,b)=>b[1].games-a[1].games)[0];
-function guideBuildPlan(w){
-  // One build as these players played it: first big component, the three items, boots where they usually came.
-  if(!w)return[];
-  const steps=w.items.map((id,i)=>({kind:`slot${i+1}`,id,label:w.names[i],minute:w.timeSum[i]/w.games}));
-  const boots=guideTop(w.boots),comp=guideTop(w.components);
-  if(boots){const [key,v]=boots,[id,before]=key.split(':');steps.splice(Math.min(Number(before),3),0,{kind:'boots',id,label:v.name,minute:v.timeSum/v.games,share:v.games/w.games});}
-  if(comp){const [id,v]=comp;steps.unshift({kind:'component',id,label:v.name,minute:v.timeSum/v.games,share:v.games/w.games});}
-  return steps.sort((a,b)=>a.minute-b.minute);
+// Boots routes of one core: boots item and position (boots first, after the 1st item, ...). Each is its own observed
+// route; the first component splits it further. "-" means the players never finished upgraded boots.
+function guideBootsRoutes(w){
+  const out=new Map();
+  for(const [key,v] of Object.entries(w?.routes||{})){
+    const [bootsId,before,componentId]=key.split(':'),id=`${bootsId}:${before}`;
+    const r=out.get(id)||{id,bootsId,before:Number(before),bootsName:v.bootsName,games:0,timeSum:[0,0,0],bootsTimeSum:0,cohorts:[]};
+    r.games+=v.games;v.timeSum.forEach((x,i)=>r.timeSum[i]+=x);r.bootsTimeSum+=v.bootsTimeSum;
+    if(componentId!=='-')r.cohorts.push({componentId,componentName:v.componentName,games:v.games,timeSum:v.timeSum,bootsTimeSum:v.bootsTimeSum,componentTimeSum:v.componentTimeSum});
+    out.set(id,r);
+  }
+  return [...out.values()].map(r=>({...r,cohorts:r.cohorts.sort((a,b)=>b.games-a.games||a.componentId.localeCompare(b.componentId))}))
+    .sort((a,b)=>b.games-a.games||a.id.localeCompare(b.id));
+}
+// The build record (all games with the core) and the timing cohort (games on one route) are different samples.
+function guideCohortNote(build,planned){
+  const t=planned.timing,record=`<span><b>Build record</b> ${pct(build.wins,build.games)} win rate · ${build.games.toLocaleString()} games with these three items</span>`;
+  const timing=t.level==='route'?`${t.games.toLocaleString()} games on this route that started with ${esc(t.component)}`
+    :t.level==='boots'?`${t.games.toLocaleString()} games on this route · first component varies, too few games to time one (${GUIDE_TIMING_MIN} needed)`
+    :t.reason==='noRoutes'?'not available in this data release':`unavailable · ${t.games} game${t.games===1?'':'s'} on this route, ${GUIDE_TIMING_MIN} needed`;
+  return `${record}<span><b>Timings</b> ${timing}</span>`;
+}
+function guideRouteLabel(r){return r.bootsId==='-'?'No boots in these items':`${r.bootsName||guideItemName(r.bootsId)} · ${guideBootOrder(r.before)}`;}
+function guideBuildPlan(w,routeId=null){
+  // One observed route, every time averaged over the same games. Returns the steps and which cohort timed them.
+  const none={steps:[],timing:{level:'none',games:0},route:null};
+  if(!w)return none;
+  const items=w.items.map((id,i)=>({kind:`slot${i+1}`,id,label:w.names[i],minute:null}));
+  const routes=guideBootsRoutes(w),route=routes.find(r=>r.id===routeId)||routes[0]||null;
+  const place=(steps,boots,before)=>{if(boots)steps.splice(Math.min(before,steps.length),0,boots);return steps;};
+  if(!route){
+    // Older export without route cohorts: keep the observed order, but show no times rather than mix averages.
+    const top=guideTop(w.boots),[bootsId,before]=top?top[0].split(':'):[];
+    return{steps:place(items,top?{kind:'boots',id:bootsId,label:top[1].name,minute:null}:null,Number(before)),timing:{level:'none',games:0,reason:'noRoutes'},route:null,routes};
+  }
+  const boots=route.bootsId==='-'?null:{kind:'boots',id:route.bootsId,label:route.bootsName||guideItemName(route.bootsId),minute:null};
+  const cohort=route.cohorts[0];
+  const timed=(c,withComponent)=>{
+    const steps=place(items.map((s,i)=>({...s,minute:c.timeSum[i]/c.games})),boots&&{...boots,minute:c.bootsTimeSum/c.games},route.before);
+    if(withComponent)steps.unshift({kind:'component',id:c.componentId,label:c.componentName||guideItemName(c.componentId),minute:c.componentTimeSum/c.games});
+    return steps.sort((a,b)=>a.minute-b.minute);
+  };
+  if(cohort&&cohort.games>=GUIDE_TIMING_MIN)return{steps:timed(cohort,true),timing:{level:'route',games:cohort.games,component:cohort.componentName},route,routes};
+  if(route.games>=GUIDE_TIMING_MIN)return{steps:timed(route,false),timing:{level:'boots',games:route.games},route,routes};
+  return{steps:place(items,boots,route.before),timing:{level:'none',games:route.games,reason:'thin'},route,routes};
 }
 function guideBuildMarkup(plan){
   if(!plan.length)return '<p class="empty-copy">No games with three finished items for these filters yet.</p>';
   return `<svg class="build-route" aria-hidden="true"><path class="route-shadow"/><path class="route-line"/><path class="route-flow"/></svg>`+
-    plan.map((s,i)=>`<button type="button" class="build-step${s.kind==='component'?' part':''}" data-item-kind="${s.kind}" data-item-id="${esc(s.id)}" aria-label="Step ${i+1} of ${plan.length}, ${esc(s.label)}: open statistics"><span class="build-order">${String(i+1).padStart(2,'0')}</span><span class="eyebrow">${guideStepLabel[s.kind]}</span>${guideArt('item',s.id)}<b>${esc(s.label)}</b><span class="when">${guideTime(s.minute)}</span>${s.share!=null&&s.share<.95?`<span class="share">${pct(s.share*100,100)} of these games</span>`:''}</button>`).join('');
+    plan.map((s,i)=>`<button type="button" class="build-step${s.kind==='component'?' part':''}" data-item-kind="${s.kind}" data-item-id="${esc(s.id)}" aria-label="Step ${i+1} of ${plan.length}, ${esc(s.label)}${s.minute==null?'':` at ${guideTime(s.minute)}`}: open statistics"><span class="build-order">${String(i+1).padStart(2,'0')}</span><span class="eyebrow">${guideStepLabel[s.kind]}</span>${guideArt('item',s.id)}<b>${esc(s.label)}</b><span class="when${s.minute==null?' untimed':''}">${s.minute==null?'—':guideTime(s.minute)}</span></button>`).join('');
 }
 let guidePathTimer=null,guidePathFrame=null,guidePathBend=0;
 function guideDrawBuildPath(bend=0){
@@ -198,10 +240,12 @@ function guideOpponent(sourceId){
     ($('#region').value==='All collected regions'||b.region===$('#region').value));
   return {summary:merged(list),paths:guidePaths(list),builds:guideBuilds(list),loading:false};
 }
-function guideTimeline(steps,theirs,thin){
+function guideTimeline(steps,theirs,thin,timing={level:'route'}){
   g('timing-legend').innerHTML=`<span>${esc(champion(state.champion).name)}</span>${theirs.length?`<span>${esc(champion(state.opponent).name)}</span>`:''}`;
   const empty=(title,text)=>`<div class="empty-timing"><h3>${title}</h3><p>${text}</p></div>`;
   if(!steps.length)return empty('No complete builds yet','Timings appear once games with three finished items are collected for this selection.');
+  if(timing.level==='none')return empty('Timing unavailable for this route',timing.reason==='noRoutes'?'This data release has no per-route timings yet. Item order is shown above; times appear after the next data update.'
+    :`Only ${timing.games} game${timing.games===1?'':'s'} followed this exact route; timings need ${GUIDE_TIMING_MIN}. Choose a more common boots order, or widen the patch or region filters.`);
   const max=Math.max(20,...steps.concat(theirs).map(s=>s.minute)),end=Math.ceil((max+2)/5)*5,x=m=>m/end*100;
   const events=(list,enemy)=>{let previous=-100,tier=0;return [...list].sort((a,b)=>a.minute-b.minute).map(s=>{
     const pos=x(s.minute);tier=pos-previous<15?1-tier:0;previous=pos;
@@ -209,7 +253,7 @@ function guideTimeline(steps,theirs,thin){
     return `<${enemy?'div':'button type="button"'} class="live-event ${enemy?'enemy':''} tier-${tier}${s.kind==='component'?' part':''}" style="left:${pos}%" ${attrs}>${guideArt('item',s.id)}<b>${guideTime(s.minute)}</b><small>${esc(s.label)}</small></${enemy?'div':'button'}>`;
   }).join('');};
   const mine=steps.find(s=>s.kind==='slot1'),their=theirs.find(s=>s.kind==='slot1');
-  let note=thin?'General champion sample: too few games in this matchup for its own timings.':'Click an item for its full statistics.';
+  let note=thin?'General champion sample: too few games in this matchup for its own timings.':'Average times in the games that followed this route, not recommended purchase times. Click an item for its full statistics.';
   if(mine&&their){const d=mine.minute-their.minute;note=`Your ${mine.label} lands ${guideTime(Math.abs(d))} ${d<0?'before':'after'} their ${their.label}. Click an item for its full statistics.`;}
   return `<div class="chart-scroll" tabindex="0" role="region" aria-label="Item timings of the selected build"><div class="live-chart ${theirs.length?'two-sides':''}"><div class="live-rail"></div>${events(steps,false)}${theirs.length?`<div class="live-rail enemy"></div>${events(theirs,true)}`:''}${Array.from({length:end/5+1},(_,i)=>`<span class="tick" style="left:${x(i*5)}%">${i*5}′</span>`).join('')}</div></div><div class="timing-summary"><b>${esc(note)}</b></div>`;
 }
@@ -318,54 +362,6 @@ function guideItemDetail(kind,id){
   const alts=rows.filter(r=>r.id!==id).slice(0,4).map(r=>{const s2=ctx.allowed?guideModelScore(r,ref):null;return`<button type="button" class="im-alt" data-item-kind="${kind}" data-item-id="${esc(r.id)}">${guideArt('item',r.id)}<span>${esc(r.label)}</span><small>${pct(r.games,total)} · ${pct(r.wins,r.games)} WR${s2?` · ${fmtPp(s2.m)}`:''}</small></button>`;}).join('');
   return head+`<div class="im-tiles" style="--tiles:${kind==='component'?3:5}">${tiles}</div>`+guideCurveSection(rows,c,kind,name,slot)+impact+lane+across+(alts?`<section class="im-sec"><h3>Other ${esc(slot.toLowerCase())} choices</h3><div class="im-alts">${alts}</div></section>`:'');
 }
-// ---- Item model research preview: predictions from the pooled experimental model, never a validated pick ----
-let guideResearch={status:'loading',doc:null};
-const GUIDE_RESEARCH_FIELDS=['finalWin','goldLeadChange5','takedowns5','deaths5','championDamage5','timeAlive5s'];
-function guideResearchValid(d){
-  return d?.schemaVersion===1&&d.kind==='item_model_research_preview'&&d.status==='research_preview'&&d.claimStatus==='no_confirmed_advantage'&&
-    d.recommendation==='observed_baseline_route_a'&&d.routeLevelClaim===false&&d.model?.headlineClaimsAllowed===false&&
-    Array.isArray(d.entries)&&d.predictionFields?.join()===GUIDE_RESEARCH_FIELDS.join();
-}
-async function guideLoadResearch(){
-  // A static build file, not part of the live data release; the page works the same without it.
-  try{const d=await fetchJson('data/recommendations.json');guideResearch=guideResearchValid(d)?{status:'ready',doc:d}:{status:'missing',doc:null};}
-  catch{guideResearch={status:'missing',doc:null};}
-  renderSafely();
-}
-const GUIDE_RESEARCH_SLOTS=[['slot1','1st item'],['slot2','2nd item'],['slot3','3rd item'],['boots','Boots']];
-function guideResearchCard(research,championId,role,slot,selectedPatch='All collected patches'){
-  const tabs=`<div class="mr-tabs" role="group" aria-label="Model decision">${GUIDE_RESEARCH_SLOTS.map(([k,l])=>`<button type="button" data-guide-slot="${k}" aria-pressed="${slot===k}">${l}</button>`).join('')}</div>`;
-  const head=(scope='',withTabs=true)=>`<div class="mr-head"><div><div class="eyebrow">Experimental · research preview</div><h2 id="model-research-title">Item model preview</h2>${scope}</div>${withTabs?tabs:''}</div>`;
-  const note=(text,withTabs=true)=>head('',withTabs)+`<p class="mr-note">${text}</p>`;
-  if(research.status==='loading')return note('Loading the model preview…',false);
-  const d=research.doc;
-  if(research.status!=='ready'||!d)return note('The item model preview is not part of this build. The observed build below is unaffected.',false);
-  if(!['slot1','slot2','slot3','boots'].includes(slot))return note('The model covers the 1st, 2nd and 3rd item and boots decisions only.');
-  const slotName=(guideSlots.find(([k])=>k===slot)?.[1]||slot).toLowerCase(),you=champion(championId).name;
-  const candidates=d.entries.filter(x=>x.champion===championId&&x.role===role&&x.stage===slot);
-  const e=selectedPatch==='All collected patches'
-    ?candidates.sort((a,b)=>b.patch.localeCompare(a.patch,undefined,{numeric:true}))[0]
-    :candidates.find(x=>x.patch===selectedPatch);
-  const label=`<p class="mr-scope">Pooled across all matchups and regions · patch ${esc(e?patchLabel(e.patch):d.sourcePatches.map(patchLabel).join(', '))} · not specific to this opponent</p>`;
-  if(!e)return head(label)+`<p class="mr-note">No model comparison for ${esc(you)}’s ${esc(slotName)}: the training games do not show two common routes here.</p>`;
-  const A=guideItemName(e.baselineRoute),B=guideItemName(e.alternativeRoute),s=e.support;
-  const decision=e.scope==='boots_upgrade_purchase'?`Boots upgrade: ${esc(A)} or ${esc(B)}.`:`First component bought toward ${esc(A)} or ${esc(B)}; not the finished items.`;
-  const keep=`<p class="mr-keep"><b>No model-backed switch.</b> ${esc(A)} is this comparison’s most common training route. The build below remains based on observed games until a prospective test supports a model change.</p>`;
-  const corner=(id,name,side,share)=>`<div class="mr-corner ${side==='B'?'b':'a'}">${guideArt('item',id,name)}<div><span class="mr-tag">${side==='A'?'Most common route':'Alternative'}</span><b>${esc(name)}</b><small>${s[side==='A'?'routeA':'routeB'].toLocaleString()} training decisions${share}</small></div>${e.supported?`<div class="mr-win"><span class="big-number">${(e.predicted[side==='A'?'routeA':'routeB'][0]*100).toFixed(1)}%</span><small>predicted final win chance</small></div>`:''}</div>`;
-  const duel=`<p class="mr-decision">${decision}</p><div class="mr-duel">${corner(e.baselineRoute,A,'A','')}<span class="mr-vs" aria-hidden="true">vs</span>${corner(e.alternativeRoute,B,'B','')}</div>`;
-  if(!e.supported)return head(label)+duel+keep+`<p class="mr-note">Too few training decisions for model predictions: ${s.routeA.toLocaleString()} toward ${esc(A)} and ${s.routeB.toLocaleString()} toward ${esc(B)}; needs ${d.model.minArmTrainRows} of each.</p>`;
-  const a=e.predicted.routeA,b=e.predicted.routeB,num=(v,dp=0)=>`${v<0?'−':''}${Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp})}`;
-  const rows=[['Final win chance',v=>`${(v*100).toFixed(1)}%`],['Team gold-lead change',v=>num(v)],['Takedowns',v=>num(v,2)],['Deaths',v=>num(v,2)],['Champion damage',v=>num(v)],['Seconds alive (of 300)',v=>num(v)]];
-  // Mirrored bars scale each value by the larger of the two, so near-equal predictions look near-equal.
-  const bar=(v,o,side)=>{const m=Math.max(Math.abs(v),Math.abs(o));return`<i class="mr-bar ${side}${v<0?' neg':''}" aria-hidden="true"><i style="width:${m?(Math.abs(v)/m*100).toFixed(0):0}%"></i></i>`;};
-  const table=`<table class="mr-table"><caption>Model predictions for the next 5 minutes (final win: whole game)</caption><thead><tr><th scope="col">${esc(A)}</th><th scope="col">Predicted</th><th scope="col">${esc(B)}</th></tr></thead><tbody>${rows.map(([name,f],i)=>`<tr><td>${f(a[i])}${bar(a[i],b[i],'a')}</td><th scope="row">${name}</th><td>${f(b[i])}${bar(b[i],a[i],'b')}</td></tr>`).join('')}</tbody></table>`;
-  const gap=Math.abs(a[0]-b[0])*100,margin=d.model.preferenceMargin*100;
-  // A gap that rounds to 0.0 points is shown as no lean, never as a direction.
-  const leanText=e.modelLean==='none'||gap<.05?'No model lean: the predicted final win chances are equal to one decimal.'
-    :`Model lean: ${esc(e.modelLean==='routeA'?A:B)}, by ${gap.toFixed(1)} points of predicted win chance${gap<margin?`, smaller than the ${margin.toFixed(0)}-point margin the policy requires before it considers a switch`:''}. A prediction, not a measured or confirmed advantage.`;
-  const verdicts=[...new Set(Object.values(d.model.policyVerdicts))].map(v=>v.replaceAll('_',' ')).join(', ');
-  return head(label)+duel+`<p class="mr-lean">${leanText}</p>${table}<div class="mr-bottom">${keep}<p class="mr-note">Averaged over ${s.contexts.toLocaleString()} training decisions (${s.routeA.toLocaleString()} toward ${esc(A)}, ${s.routeB.toLocaleString()} toward ${esc(B)}) in the game states where players actually faced this choice. No uncertainty interval is available. Observational: it cannot separate the item from why players chose it.</p></div><p class="mr-foot">Model ${esc(d.model.version)} · trained ${esc(new Date(d.model.trainedAt).toLocaleDateString('en-GB'))} on ${d.model.fitRows.toLocaleString()} decisions · held-out policy check: ${esc(verdicts)} · no route-level claim.</p>`;
-}
 // ---- Counters: the selected champion's win rate against each lane opponent, relative to its usual win rate ----
 // Small samples are pulled toward the usual win rate before ranking, so a lucky 8-game streak cannot top the list.
 const COUNTER_MIN=15,COUNTER_PRIOR=30,COUNTER_SHOW=10;
@@ -396,6 +392,15 @@ function guideOpenItem(kind,id){
   if(!d.open)d.showModal();
   d.scrollTop=0;
 }
+// A fun fact, not a recommendation: how often this champion is part of the game's first kill and first tower.
+const FACT_MIN=100;
+function guideFact(sel,you,role,roleName){
+  const f=sel.firsts,r=stats.firstObjectives?.[role];
+  if(!f||f.games<FACT_MIN)return '';
+  const rate=(n,d)=>`${Math.round(100*n/d)}%`,blood=o=>o.firstBloodKill,tower=o=>o.firstTowerKill+o.firstTowerAssist;
+  const avg=get=>r?.games?` (${esc(roleName.toLowerCase())} average ${rate(get(r),r.games)})`:'';
+  return `Fun fact: ${esc(you)} draws first blood in ${rate(blood(f),f.games)} of these games${avg(blood)} and helps take the first tower in ${rate(tower(f),f.games)}${avg(tower)}.`;
+}
 function renderGuide(){
   if(!g('guide-root'))return;
   const chosen=selection(),sel=merged(chosen.buckets),baseSelection=guideBase(),base=merged(baseSelection.buckets);
@@ -403,7 +408,7 @@ function renderGuide(){
   const active=thin?baseSelection:chosen,summary=thin?base:sel,paths=guidePaths(active.buckets);
   const builds=guideBuilds(active.buckets),rank=guideRankBuilds(builds);
   if(!builds.some(w=>w.id===guideState.build))guideState.build=rank.popular?.id||null;
-  const build=builds.find(w=>w.id===guideState.build)||null,plan=guideBuildPlan(build);
+  const build=builds.find(w=>w.id===guideState.build)||null,planned=guideBuildPlan(build,guideState.route),plan=planned.steps,timing=planned.timing;
   const path=null,buildSummary=summary,steps=guideBuildSteps(summary,null);
   const opposite=guideOpponent(chosen.source?.id||active.source?.id||'riot-match-v5');
   const you=champion(state.champion).name,them=state.opponent==='All matchups'?'All matchups':champion(state.opponent).name;
@@ -411,6 +416,8 @@ function renderGuide(){
   g('guide-portraits').innerHTML=guideArt('champion',state.champion,you)+(state.opponent==='All matchups'?'<span class="all-opponents" aria-hidden="true">?</span>':guideArt('champion',state.opponent,them));
   g('guide-role').textContent=`The matchup guide · ${$('#role').selectedOptions?.[0]?.textContent||$('#role').value}`;
   g('guide-subtitle').textContent=`${$('#patch').selectedOptions?.[0]?.textContent||'All patches'} · ${$('#region').selectedOptions?.[0]?.textContent||'All regions'}`;
+  const fact=guideFact(sel,you,$('#role').value,$('#role').selectedOptions?.[0]?.textContent||$('#role').value);
+  g('guide-fact').hidden=!fact;g('guide-fact').innerHTML=fact;
   const ci=wilson(sel.wins,sel.games),wr=sel.games?sel.wins/sel.games*100:null;
   const delta=wr!=null&&base.games&&sel.games>=GUIDE_MIN&&chosen.source?.id===baseSelection.source?.id&&state.opponent!=='All matchups'?wr-base.wins/base.games*100:null;
   const lane=laneDuel(sel);
@@ -448,6 +455,9 @@ function renderGuide(){
   const pick=[rank.popular,...rank.eligible.filter(w=>w!==rank.popular)].filter(Boolean).slice(0,4);
   g('path-tabs').hidden=pick.length<2;
   g('path-tabs').innerHTML=pick.map(w=>`<button type="button" data-guide-build="${esc(w.id)}" aria-pressed="${w===build}"><span class="bt-tag">${w===rank.popular?'Most played':w===rank.best?'Higher observed WR':'Alternative'}</span><span class="bt-icons">${w.items.map(id=>guideArt('item',id)).join('')}</span><b>${pct(w.wins,w.games)}</b><span>${w.games} games</span></button>`).join('');
+  const routeOptions=(planned.routes||[]).slice(0,4);
+  g('route-tabs').hidden=!routeOptions.length;
+  g('route-tabs').innerHTML=routeOptions.length?`<span class="route-label" id="route-label">Boots route</span><div class="route-options" role="group" aria-labelledby="route-label">${routeOptions.map(r=>`<button type="button" data-guide-route="${esc(r.id)}" aria-pressed="${r===planned.route}">${r.bootsId==='-'?'':guideArt('item',r.bootsId)}<span><b>${esc(guideRouteLabel(r))}</b><small>${r.games.toLocaleString()} game${r.games===1?'':'s'}</small></span></button>`).join('')}</div>`:'';
   g('build').style.setProperty('--path-count',String(Math.max(1,plan.length)));
   g('build').innerHTML=guideBuildMarkup(plan);guideStartBuildPath();
   // "Why this route?": only facts the export knows (counts, coverage, timing). No invented winner.
@@ -458,13 +468,15 @@ function renderGuide(){
       :state.opponent==='All matchups'?`Across all matchups: ${summary.games} games.`:`${sel.games} games against ${esc(them)}: enough for a route of its own.`);
     why.push(rank.best&&rank.best!==rank.popular?`${esc(guideBuildName(rank.best))} has a higher observed win rate (${pct(rank.best.wins,rank.best.games)} over ${rank.best.games} games), even after allowing for its smaller sample. It is listed as an alternative, not as proven better.`
       :'No other route is ahead by a point once sample size is taken into account, so the most played one is suggested.');
-    if(firstItem)why.push(`First item finished at ${guideTime(firstItem.minute)} on average in these games.`);
+    if(firstItem&&firstItem.minute!=null)why.push(`First item finished at ${guideTime(firstItem.minute)} on average in the ${timing.games} games that followed this route.`);
     why.push(`${pct(build.wins,build.games)} observed win rate${buildCi?` (likely ${buildCi[0].toFixed(0)}–${buildCi[1].toFixed(0)}%)`:''}.`);
   }
-  g('build-hint').innerHTML=build?`<div class="why"><h3>Why this route?</h3><ul>${why.map(x=>`<li>${x}</li>`).join('')}</ul><p>Prototype suggestion: an observed route, not an optimized one. The three finished items were played together; the component and boots are the most common choices within those games. Click an item for details. A win rate does not prove the build caused wins.</p></div>`:'';
+  g('build-hint').innerHTML=build?`<div class="why"><h3>Why this route?</h3><ul>${why.map(x=>`<li>${x}</li>`).join('')}</ul><p>Prototype suggestion: an observed route, not an optimized one. The three finished items were played together. Boots-first and item-first are separate routes: pick one above, and every time shown comes only from the games that followed it. Click an item for details. A win rate does not prove the build caused wins.</p></div>`:'';
   const theirBuild=guideRankBuilds(opposite.builds||[]).popular;
-  g('timing-subtitle').textContent=build?`${thin?'All matchups (too few games in this matchup) · ':''}${guideBuildName(build)} · average times in these ${build.games} games`:'';
-  g('guide-timeline').innerHTML=guideTimeline(plan,thin?[]:guideBuildPlan(theirBuild),thin);
+  const theirPlan=thin?null:guideBuildPlan(theirBuild),theirs=theirPlan&&theirPlan.timing.level!=='none'?theirPlan.steps:[];
+  g('timing-subtitle').textContent=build?`${thin?'All matchups (too few games in this matchup) · ':''}${guideBuildName(build)}${planned.route?` · ${guideRouteLabel(planned.route)}`:''}`:'';
+  g('route-cohort').innerHTML=build?guideCohortNote(build,planned):'';
+  g('guide-timeline').innerHTML=guideTimeline(plan,theirs,thin,timing);
   g('guide-later').innerHTML=steps.filter(s=>['slot4','slot5'].includes(s.kind)).map(s=>guideStep(s,buildSummary,!thin&&!!path)).join('')+coreList(buildSummary)||'<p class="empty-copy">No later builds observed yet.</p>';
   const slotLabel=guideSlots.find(([k])=>k===guideState.slot)?.[1]||'2nd item';
   g('compare-title').textContent=`Compare ${slotLabel.toLowerCase()}`;
@@ -472,7 +484,6 @@ function renderGuide(){
   g('compare-tabs').innerHTML=guideSlots.map(([k,label])=>`<button type="button" data-guide-slot="${k}" aria-pressed="${guideState.slot===k}">${label}</button>`).join('');
   g('choices').innerHTML=guideComparison(guideComparisonSample(paths,path,buildSummary),!thin&&active.source?.type==='riot_match_timelines',steps.find(s=>s.kind===guideState.slot)?.c.id);
   const theirItem=opposite.summary&&topChoice(opposite.summary,'slot1');
-  g('model-research').innerHTML=guideResearchCard(guideResearch,state.champion,$('#role').value,guideState.slot,$('#patch').value);
   g('opponent-note').hidden=state.opponent==='All matchups';
   g('opponent-note').innerHTML=`<div class="eyebrow">Across the lane</div><h3>${esc(them)}’s common first item</h3>${theirItem?`${guideArt('item',theirItem.id)}<p>${esc(theirItem.label)} · ${theirItem.games} purchases</p>`:`<p>${opposite.loading?'Loading…':'No matching opponent item observations.'}</p>`}`;
   const updated=active.source?.generatedAt||stats.generatedAt;
@@ -506,15 +517,15 @@ function initGuide(){
   g('item-modal')?.addEventListener('click',e=>{if(e.target===g('item-modal'))g('item-modal').close();});
   g('guide-root').addEventListener('click',e=>{
     const path=e.target.closest('[data-guide-path]'),slot=e.target.closest('[data-guide-slot]'),opp=e.target.closest('[data-opp]'),view=e.target.closest('[data-view]'),sort=e.target.closest('[data-sort]');
-    const build=e.target.closest('[data-guide-build]'),item=e.target.closest('[data-item-kind]'),counter=e.target.closest('[data-counter-opp]');
+    const build=e.target.closest('[data-guide-build]'),route=e.target.closest('[data-guide-route]'),item=e.target.closest('[data-item-kind]'),counter=e.target.closest('[data-counter-opp]');
     if(counter){state.opponent=counter.dataset.counterOpp;if(![...$('#opponent').options].some(o=>o.value===state.opponent))$('#opponent').add(new Option(champion(state.opponent).name,state.opponent));$('#opponent').value=state.opponent;guideState.path=null;guideState.view='build';renderGuide();g('view-build').focus({preventScroll:true});window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});return;}
     if(e.target.closest('[data-close-modal]')){g('item-modal').close();return;}
     if(e.target.closest('#setup-fold,#setup-summary')){guideState.setupFolded=!guideState.setupFolded;try{localStorage.setItem('settistics-setup-folded',guideState.setupFolded?'1':'0');}catch{}renderGuide();return;}
     if(e.target.closest('#setup-more')){guideState.setupMore=!guideState.setupMore;try{localStorage.setItem('settistics-setup-more',guideState.setupMore?'1':'0');}catch{}renderGuide();return;}
-    if(build){guideState.build=build.dataset.guideBuild;renderGuide();document.querySelector(`[data-guide-build="${CSS.escape(guideState.build)}"]`)?.focus();return;}
+    if(route){guideState.route=route.dataset.guideRoute;renderGuide();document.querySelector(`[data-guide-route="${CSS.escape(guideState.route)}"]`)?.focus();return;}
+    if(build){guideState.build=build.dataset.guideBuild;guideState.route=null;renderGuide();document.querySelector(`[data-guide-build="${CSS.escape(guideState.build)}"]`)?.focus();return;}
     if(item){guideOpenItem(item.dataset.itemKind,item.dataset.itemId);if(!item.closest('.choices,.later-build,#item-modal'))return;}
     if(path){guideState.path=path.dataset.guidePath;renderGuide();document.querySelector(`[data-guide-path="${CSS.escape(guideState.path)}"]`)?.focus();}
-    if(slot&&slot.closest('.mr-tabs')){guideState.slot=slot.dataset.guideSlot;renderGuide();g('model-research').querySelector(`[data-guide-slot="${guideState.slot}"]`)?.focus({preventScroll:true});return;}
     if(slot){const origin=e.target.closest('.build,.compare-tabs,.live-chart,.later-build');guideState.slot=slot.dataset.guideSlot;renderGuide();const narrow=window.matchMedia('(max-width:900px)').matches;(origin?.classList.contains('build')&&!narrow?g('build'):g('compare-tabs')).querySelector(`[data-guide-slot="${guideState.slot}"]`)?.focus({preventScroll:true});if(narrow&&!origin?.classList.contains('compare-tabs'))document.querySelector('.comparison').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});}
     if(opp){state.opponent=opp.dataset.opp;$('#opponent').value=state.opponent;guideState.path=null;renderGuide();}
     if(view){guideState.view=view.dataset.view;renderGuide();}
@@ -527,5 +538,5 @@ function initGuide(){
   const about=g('about');g('nav-about').onclick=e=>{e.preventDefault();about.showModal();};about.querySelector('.close').onclick=()=>about.close();about.onclick=e=>{if(e.target===about)about.close();};
   // Keep a broken third-party artwork export from leaving an inaccessible image.
   g('guide-root').addEventListener('error',e=>{if(e.target.tagName==='IMG'){const fallback=document.createElement('span');fallback.className='icon-fallback';fallback.textContent=e.target.alt||'◇';e.target.replaceWith(fallback);}},true);
-  renderGuide();loadStats();loadRoster();guideLoadResearch();
+  renderGuide();loadStats();loadRoster();
 }

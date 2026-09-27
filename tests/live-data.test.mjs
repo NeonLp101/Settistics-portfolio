@@ -38,6 +38,14 @@ test('closed aggregate boundary rejects private fields, credentials, raw files a
   ]){const f=fixture(),s=new Store();mutate(f);await assert.rejects(publishRelease(s,f));assert.equal(s.writes.length,0);}
   assert.equal(validateRelease(fixture()).size,2);
 });
+test('route timing cohorts are accepted only when complete and well-formed',()=>{
+  const withRoutes=routes=>{const f=fixture();f.get('champions/Sett.json').buckets[0].builds=[{id:'6631>3053>3071',items:['6631','3053','3071'],names:['A','B','C'],games:2,wins:1,timeSum:[26,44,56],components:{},boots:{},...(routes===undefined?{}:{routes})}];return f;};
+  const route=(games,extra={})=>({bootsName:'Plated Steelcaps',componentName:'Phage',games,timeSum:[12*games,21*games,27*games],bootsTimeSum:14*games,componentTimeSum:7*games,...extra});
+  assert.equal(validateRelease(withRoutes({'3047:1:3044':route(1),'-:0:-':route(1,{bootsName:'',componentName:''})})).size,2);
+  assert.equal(validateRelease(withRoutes(undefined)).size,2);
+  for(const routes of [{'3047:1:3044':route(1)},{'3047:5:3044':route(2)},{'3047:1':route(2)},{'3047:1:3044':route(2,{playerId:'x'})},{'3047:1:3044':route(2,{timeSum:[1,2,3,4]})}])
+    assert.throws(()=>validateRelease(withRoutes(routes)),/Invalid aggregate/,JSON.stringify(routes));
+});
 test('publication is versioned, verified, and switches manifest last; old release remains readable',async()=>{
   const s=new Store(),one=await publishRelease(s,fixture()),two=await publishRelease(s,fixture());
   assert.equal(two.previous.version,one.current.version);assert.notEqual(one.current.version,two.current.version);

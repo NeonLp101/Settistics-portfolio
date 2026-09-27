@@ -8,7 +8,7 @@ try {
     if(m&&!process.env[m[1]])process.env[m[1]]=m[2].replace(/^['"]|['"]$/g,'');
   }
 } catch(error) {if(error.code!=='ENOENT')throw error;}
-const assets=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/api-ui.js','api-ui.js'],['/api-ui.css','api-ui.css'],['/data/index.json','data/index.json'],['/data/recommendations.json','data/recommendations.json']]);
+const assets=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/api-ui.js','api-ui.js'],['/api-ui.css','api-ui.css'],['/data/index.json','data/index.json']]);
 for (const page of ['data-client.js','guide.js','guide.css','theme.js','fonts.css','impressum.html','datenschutz.html','riot.txt']) assets.set('/'+page,page);
 // Self-hosted assets: strict patterns only, so no path can escape public/.
 const assetPattern=/^\/(data\/champions\/[A-Za-z0-9]+\.json|fonts\/[A-Za-z0-9-]+\.woff2|ddragon\/static\.json|ddragon\/(?:champion\/[A-Za-z0-9]+|(?:item|rune|spell)\/[0-9]+)\.png)$/;

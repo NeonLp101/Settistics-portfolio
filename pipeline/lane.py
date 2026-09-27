@@ -18,8 +18,12 @@ import argparse
 import bisect
 import json
 import math
+import os
+import sqlite3
 import zlib
 from collections import Counter
+from multiprocessing import Pool
+from pathlib import Path
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -141,10 +145,36 @@ def windows(match, timeline, items):
             yield p, opp, kind, item, t0, t1
 
 
-def load(db):
-    catalogs = {r["patch"]: json.loads(r["items"]) for r in db.execute("SELECT patch, items FROM catalog")}
+def _load_chunk(job):
+    db_path, ids = job
+    db = sqlite3.connect(Path(db_path).resolve().as_uri() + "?mode=ro", uri=True, timeout=60)
+    db.row_factory = sqlite3.Row
+    try:
+        catalogs = {r["patch"]: json.loads(r["items"]) for r in db.execute("SELECT patch, items FROM catalog")}
+        placeholders = ",".join("?" * len(ids))
+        return _windows_of(db.execute(f"SELECT id, detail, timeline FROM matches WHERE id IN ({placeholders}) ORDER BY id", ids),
+                           catalogs)
+    finally:
+        db.close()
+
+
+def load(db, db_path, workers=None, chunk=500):
+    """Every clean window, in match-id order. Games are parsed in parallel; each worker reads its own chunk."""
+    ids = [r[0] for r in db.execute(f"SELECT id FROM matches WHERE {USABLE_SQL} ORDER BY id")]
+    jobs = [(db_path, ids[i:i + chunk]) for i in range(0, len(ids), chunk)]
     rows, counts = [], Counter()
-    for row in db.execute(f"SELECT id, detail, timeline FROM matches WHERE {USABLE_SQL} ORDER BY id"):
+    with Pool(workers or max(1, (os.cpu_count() or 4) - 2)) as pool:
+        for n, (part, part_counts) in enumerate(pool.imap(_load_chunk, jobs), 1):
+            rows.extend(part)
+            counts.update(part_counts)
+            if n % 20 == 0 or n == len(jobs):
+                print(f"  {min(n * chunk, len(ids)):,}/{len(ids):,} games scanned, {len(rows):,} clean windows", flush=True)
+    return rows, counts
+
+
+def _windows_of(matches, catalogs):
+    rows, counts = [], Counter()
+    for row in matches:
         match, timeline = json.loads(row["detail"]), json.loads(row["timeline"])
         if not valid_match(match["info"]):
             continue
@@ -203,10 +233,11 @@ def cross_fit(rows, features=FEATURES):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--db", default=str(ROOT / "data" / "settistics.sqlite"))
+    parser.add_argument("--workers", type=int, help="parsing processes (default: all cores but two)")
     args = parser.parse_args()
     db = connect(args.db)
     print("Finding clean 1v1 laning windows...", flush=True)
-    rows, counts = load(db)
+    rows, counts = load(db, args.db, args.workers)
     if len(rows) < 100:
         raise SystemExit(f"Only {len(rows)} clean laning windows; collect more games first.")
     add_matchup_strength(rows)

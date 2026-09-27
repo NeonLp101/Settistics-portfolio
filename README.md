@@ -2,19 +2,17 @@
 
 Settistics is a League of Legends matchup and build explorer built from real Riot
 match timelines. It shows observed item order, boots timing, runes and spells for a
-champion, role and lane opponent, with sample sizes and uncertainty. Its goal is to
-recommend items that perform better than the most common choice, but that claim is
-**not yet established**. The [site preview](https://settistics.netlify.app/) is
+champion, role and lane opponent, with sample sizes and uncertainty. It describes
+what players build and how those games went; it does not claim that one item causes
+more wins than another. The [site preview](https://settistics.netlify.app/) is
 password-protected while the product is under review. This repository is a
 sanitized portfolio snapshot for technical review; personal legal-notice details
 remain in the private deployment source.
 
-The pipeline also trains a shared, all-champion item model. The site labels its
-output **experimental**: predicted final-win and short-window outcomes can be
-explored by item slot, while the observed build remains the main guide. An initial
-development comparison found no supported improvement over choosing the most
-common item. Prediction quality alone does not establish that changing an item
-causes a better result.
+A causal item-recommendation model was researched from 2026-09-24 to 2026-09-27 and
+archived: at this data scale, item-versus-item effects on winning are too small to
+separate from noise and from who buys which item. The code, tests, docs and findings
+are in [archive/item-model](archive/item-model/README.md).
 
 ## What is implemented
 
@@ -33,28 +31,10 @@ causes a better result.
 - Deduplicated match details and timelines; patch-matched item definitions.
 - Observed matchup win rates, early starting packages, purchased items, full rune
   pages and spell pairs. Wilson intervals and sample denominators are displayed.
-- Private research comparator: regularized logistic regression versus nonlinear
-  extra trees, using forward-held-out doubly robust A/B estimates.
-- Conservative recipe-cost/slot screening utility for a future situation engine.
-- A shared item-choice and outcome-model research pipeline with match-grouped
-  evaluation and an explicit gate before model preferences become recommendations.
+- A win-probability model (WPA) that predicts the winner from game state.
+- Lane duels: gold lead in top and mid until the first gank, per matchup and per early choice.
+- First-blood and first-tower rates per champion, shown against the role average.
 - Tests with isolated synthetic fixtures; no synthetic match statistics are published.
-
-## How the model is evaluated
-
-`pipeline/decisions.py` extracts each eligible purchase decision and its preceding
-game state. `pipeline/branches.py` defines comparable item alternatives, including
-players who started but did not finish an item. `pipeline/recommender.py` pools
-evidence across champions and fits final-win, item-choice and short-window outcome
-models. The short-window predictions describe combat, survival and progress; they
-are not substituted for final wins as proof of item strength.
-
-The research pipeline compares its proposed decisions with the most-common-item
-baseline on held-out games, checks overlap and sample coverage, and reports
-match-clustered uncertainty. The first development evaluation was inconclusive:
-the model changed only 135 of 115,564 decisions, and its estimated gain did not
-clear the evidence gate. See [current state](docs/current-state.md) and the
-[model plan](docs/general-item-model-plan.md) for the latest protocol and limits.
 
 Raw matches, player identifiers, local databases and private research outputs are
 not part of this repository or the public-site build. Reproducing numerical model
@@ -159,9 +139,7 @@ an early-game proxy, not an exact shop-departure record or randomized treatment.
 
 Stored purchase features use ONLY snapshots strictly earlier than each event. The
 snapshot age is recorded; missing state stays missing. Available gold is explicitly
-not an exact reconstruction of purchase-time budget. These features feed the
-private item-model research pipeline; the site does not turn its unvalidated leans
-into recommended build routes.
+not an exact reconstruction of purchase-time budget.
 
 Rank filters are disabled. A seed's rank today is NOT the rank of every player in
 their historical matches. The export does not imply Emerald+ just because seeds
@@ -217,7 +195,6 @@ XP and level gaps, objectives, draft strength), trains cross-fitted gradient
 boosting with Platt recalibration, and scores purchases using models that did not
 train on those games. Per-item WPA did not reproduce across development splits, so
 the site marks it as unsupported rather than presenting it as an item advantage.
-The experimental item model described above is a separate pipeline.
 
 ## Lane 1v1 (prototype)
 
@@ -234,43 +211,7 @@ cross-fitted model predicts it from the state at the start, and the site shows "
 compared with the average choice. Keystone and summoner spells need no item data; starting items, first item
 and boots appear once the patch's Data Dragon item list is available.
 
-## 5. Efficient-model research
-
-Install optional dependencies, list available package IDs, then preregister a pair:
-
-```bash
-python -m pip install -r requirements-model.txt
-python pipeline/model.py --patch 16.18 --champion Sett --list
-python pipeline/model.py --patch 16.18 --champion Sett --a "1054x1+2003x1" --b "1055x1+2003x1"
-```
-
-The IDs above are examples; choose IDs actually returned by `--list` for your
-dataset. Add `--opponent Teemo` only when that slice has enough support.
-
-The comparator uses three expanding-time evaluation folds: training always precedes
-the predicted match. It fits an outcome model and a propensity model, screens
-estimated propensity outside 0.1–0.9, and reports a doubly robust contrast on the
-remaining A/B chooser population. It does NOT claim population-wide ATE or policy
-value. Mirrored focal champions in one match are excluded from this comparison.
-
-Reports contain runtime, held-out Brier/log loss, calibration gap, overlap,
-effective sample sizes, and approximate player-clustered conditional intervals.
-The minimum sample counts are only software gates, not proof of statistical power.
-Even a report passing basic support is marked `causalValidationPassed: false`.
-Missing historical skill adjustment and unmeasured confounding are unresolved.
-Reports go to `data/research/comparison.json`, NEVER to the public site.
-
-The efficiency strategy is **constraints → small candidate set → cheap baseline →
-nonlinear benchmark → uncertainty/abstention**. A more complex model must improve
-held-out performance and stability to justify extra cost. Better Brier score alone
-does not prove better treatment-effect estimation.
-
-`pipeline/candidates.py` supports ordinary recipe discounts and six-slot/budget
-screening when exact inventory and gold are supplied. It is a library helper, not
-an in-game integration. Unique groups, transformations, champion special rules and
-other shop restrictions remain unverified. It never labels a build optimal.
-
-## 6. Private/public boundary and deployment
+## 5. Private/public boundary and deployment
 
 - `data/settistics.sqlite`: PRIVATE raw matches, timelines, player identifiers.
 - `data/research/`: PRIVATE experimental reports.
@@ -302,7 +243,7 @@ appropriate Riot production approval. Publishing/redeploying has not been done
 by this package. After local collection/export, rebuild and redeploy to refresh
 the published aggregate snapshot; a hosted frontend does not see your local DB.
 
-## 7. Tests and current limits
+## 6. Tests and current limits
 
 ```bash
 python -m unittest discover -s tests -v
@@ -318,10 +259,9 @@ Run `npm test` for the maintained Python and Node suites. The site build accepts
 only an explicit allowlist of frontend files and aggregates; private databases,
 keys and research reports are excluded.
 
-Not yet established: a reproducible advantage over the most-common-item baseline,
-causal item effects, precise recommendations for sparse matchups, or a validated
-sequential build policy. Observational match data can retain unmeasured selection
-bias even after adjustment.
+Observed win rates are associations. Observational match data retains selection
+bias (who buys an item, against which team) that adjustment only partly removes;
+the archived item-model research found that bias as large as the item effects.
 
 ## Source availability
 
@@ -337,6 +277,4 @@ Sources:
 - https://developer.riotgames.com/policies/general
 - https://u.gg/faq
 - https://u.gg/terms-of-service
-- https://www.pywhy.org/EconML/spec/estimation/dr.html
-- https://arxiv.org/abs/1608.00060
 - https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html

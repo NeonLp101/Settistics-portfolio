@@ -23,9 +23,13 @@ const eligible=dict(kinds,count);
 const totals={games:count,wins:count,timeSum:num,timeCount:count,residN:count,residSum:num,residSq:num,laneN:count,laneSum:num,laneSq:num,laneDelta:num,laneUp:count,curveN:count,preSum:num,curveSum:arr(num,10),curveSq:arr(num,10)};
 const choice=obj({kind:pattern(kinds),id,label:text,...totals},['kind','id','label','games','wins','timeSum','timeCount']);
 const component=obj({name:text,games:count,wins:count,timeSum:num});
-const build=obj({id,items:arr(id,6),names:arr(text,6),games:count,wins:count,timeSum:arr(num,6),components:dict(/^\d{1,6}$/,component),boots:dict(/^\d{1,6}:[0-6]$/,component)});
+// One timing cohort per core: boots item or "-", boots position (0-3), first component or "-". Optional for older exports.
+const route=obj({bootsName:text,componentName:text,games:count,timeSum:arr(num,3),bootsTimeSum:num,componentTimeSum:num});
+const build=obj({id,items:arr(id,6),names:arr(text,6),games:count,wins:count,timeSum:arr(num,6),components:dict(/^\d{1,6}$/,component),boots:dict(/^\d{1,6}:[0-6]$/,component),routes:dict(/^(\d{1,6}|-):[0-3]:(\d{1,6}|-)$/,route)},['id','items','names','games','wins','timeSum','components','boots']);
 const path=obj({id,firstItem:id,bootsBefore:count,games:count,wins:count,eligible,choices:arr(choice)});
-const bucket=obj({champion:champ,opponent:champ,role,patch,region,sourceId:pattern(/^[a-z0-9-]{1,50}$/),games:count,wins:count,eligible,choices:arr(choice),builds:arr(build),paths:arr(path)},['champion','opponent','role','patch','region','sourceId','games','wins','eligible','choices']);
+const FIRSTS=['firstBloodKill','firstBloodAssist','firstTowerKill','firstTowerAssist'];
+const firstCounts=Object.fromEntries(FIRSTS.map(k=>[k,count]));
+const bucket=obj({champion:champ,opponent:champ,role,patch,region,sourceId:pattern(/^[a-z0-9-]{1,50}$/),games:count,wins:count,...firstCounts,eligible,choices:arr(choice),builds:arr(build),paths:arr(path)},['champion','opponent','role','patch','region','sourceId','games','wins','eligible','choices']);
 const check=obj({flagged:num,groups:count,neededGames:nullable(num),pass:bool,placebo:num,splitHalfR:num});
 const slots=/^(boots|slot[1-5]|keystone|packages|spells)$/;
 const reliability=obj({wpa:dict(slots,check),lane:dict(slots,check),wpaPooled:dict(slots,check),lanePooled:dict(slots,check),curve:dict(slots,dict(/^(10|[1-9])$/,check)),curvePooled:dict(slots,dict(/^(10|[1-9])$/,check))},[]);
@@ -36,13 +40,18 @@ const wpa=obj({generatedAt:date,method:text,games:count,snapshots:count,decision
 const lane=obj({generatedAt:date,windows:count,cleanShare:dict(slots,num),maeGold:num,baselineMaeGold:num,stateOnlyMaeGold:num,r2:num,stateOnlyR2:num,matchupR2:num,features:arr(pattern(/^[a-z_]{1,30}$/),100)});
 const source=obj({id:pattern(/^[a-z0-9-]{1,50}$/),name:text,type:pattern(/^(riot_match_timelines|aggregate_import)$/),generatedAt:nullable(date),supportsWpaResearch:bool,note:text,sourceUrl:pattern(/^https:\/\/[^\s@]+$/)},['id','name','type','supportsWpaResearch']);
 const coverage=obj({champion:champ,opponent:champ,role,games:count});
-const index=obj({schemaVersion:literal(2),status:pattern(/^(observed|empty)$/),generatedAt:date,wpaStatus:pattern(/^(prototype|unavailable)$/),wpaModel:nullable(wpa),laneModel:nullable(lane),reliability:nullable(reliability),pooledEffects:nullable(pooled),itemDataMissing:arr(patch),itemDataProvisional:dict(/^\d{1,2}\.\d{1,2}$/,pattern(/^\d{1,2}\.\d{1,2}\.\d{1,2}$/)),rankStatus:text,samplePolicy:text,uniqueMatches:count,sources:arr(source,100),patches:arr(patch,100),regions:arr(region,50),coverage:arr(coverage)});
+const firstObjectives=dict(/^(TOP|JUNGLE|MIDDLE|BOTTOM|UTILITY)$/,obj({games:count,...firstCounts}));
+const indexFields={schemaVersion:literal(2),status:pattern(/^(observed|empty)$/),generatedAt:date,wpaStatus:pattern(/^(prototype|unavailable)$/),wpaModel:nullable(wpa),laneModel:nullable(lane),reliability:nullable(reliability),pooledEffects:nullable(pooled),itemDataMissing:arr(patch),itemDataProvisional:dict(/^\d{1,2}\.\d{1,2}$/,pattern(/^\d{1,2}\.\d{1,2}\.\d{1,2}$/)),rankStatus:text,samplePolicy:text,uniqueMatches:count,firstObjectives:nullable(firstObjectives),sources:arr(source,100),patches:arr(patch,100),regions:arr(region,50),coverage:arr(coverage)};
+// firstObjectives is optional: exports from before it existed stay valid.
+const index=obj(indexFields,Object.keys(indexFields).filter(k=>k!=='firstObjectives'));
 
 function invariants(v,p='root') {
   if(!v||typeof v!=='object')return;
   if(Object.hasOwn(v,'wins')&&v.wins>v.games)fail(p+'.wins');
-  if(Object.hasOwn(v,'games'))for(const k of ['residN','laneN','curveN','timeCount'])if(v[k]>v.games)fail(p+'.'+k);
+  if(Object.hasOwn(v,'games'))for(const k of ['residN','laneN','curveN','timeCount',...FIRSTS])if(v[k]>v.games)fail(p+'.'+k);
   if(v.pass===true&&(v.groups<20||v.splitHalfR<.4))fail(p+'.pass');
+  // Every game with a core belongs to exactly one timing route.
+  if(v.routes&&typeof v.routes==='object'&&Object.values(v.routes).reduce((n,r)=>n+(r?.games||0),0)!==v.games)fail(p+'.routes');
   if(v.auc!==undefined&&(v.auc<0||v.auc>1||v.brier<0||v.brier>1))fail(p+'.metrics');
   for(const [k,x] of Object.entries(v))invariants(x,p+'.'+k);
 }
@@ -69,6 +78,3 @@ export function validateRelease(files){
   if(sums.size)fail('missing coverage');
   return files;
 }
-
-// Shared by the separate research-preview schema (recommendation-schema.mjs).
-export {fail,num,count,text,pattern,bool,literal,arr,obj,dict,champ,role,patch,region,date};

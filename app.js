@@ -32,7 +32,8 @@ function selection(){
   const [id,buckets]=pool[0];return{buckets,source:source(id)};
 }
 function matches(){return selection().buckets;}
-function merged(buckets){const out={games:0,wins:0,eligible:{packages:0,items:0,runes:0,spells:0,build:0,keystone:0,skills:0},choices:new Map()};for(const b of buckets){out.games+=b.games;out.wins+=b.wins;for(const k of Object.keys(out.eligible))out.eligible[k]+=b.eligible?.[k]||0;for(const c of b.choices){const key=c.kind+':'+c.id;const v=out.choices.get(key)||{...c,games:0,wins:0,timeSum:0,timeCount:0,residSum:0,residSq:0,residN:0,laneSum:0,laneSq:0,laneN:0,laneDelta:0,laneUp:0,curveN:0,preSum:0,curveSum:null,curveSq:null};for(const k of ['games','wins','timeSum','timeCount','residSum','residSq','residN','laneSum','laneSq','laneN','laneDelta','laneUp','preSum'])v[k]+=c[k]||0;if(c.curveN){v.curveN=(v.curveN||0)+c.curveN;for(const key of ['curveSum','curveSq']){v[key]=v[key]||c[key].map(()=>0);c[key].forEach((x,i)=>v[key][i]+=x);}}out.choices.set(key,v);}}return out;}
+const FIRSTS=['firstBloodKill','firstBloodAssist','firstTowerKill','firstTowerAssist'];
+function merged(buckets){const out={games:0,wins:0,firsts:{games:0,...Object.fromEntries(FIRSTS.map(k=>[k,0]))},eligible:{packages:0,items:0,runes:0,spells:0,build:0,keystone:0,skills:0},choices:new Map()};for(const b of buckets){out.games+=b.games;out.wins+=b.wins;if(b.firstBloodKill!==undefined){out.firsts.games+=b.games;for(const k of FIRSTS)out.firsts[k]+=b[k]||0;}for(const k of Object.keys(out.eligible))out.eligible[k]+=b.eligible?.[k]||0;for(const c of b.choices){const key=c.kind+':'+c.id;const v=out.choices.get(key)||{...c,games:0,wins:0,timeSum:0,timeCount:0,residSum:0,residSq:0,residN:0,laneSum:0,laneSq:0,laneN:0,laneDelta:0,laneUp:0,curveN:0,preSum:0,curveSum:null,curveSq:null};for(const k of ['games','wins','timeSum','timeCount','residSum','residSq','residN','laneSum','laneSq','laneN','laneDelta','laneUp','preSum'])v[k]+=c[k]||0;if(c.curveN){v.curveN=(v.curveN||0)+c.curveN;for(const key of ['curveSum','curveSq']){v[key]=v[key]||c[key].map(()=>0);c[key].forEach((x,i)=>v[key][i]+=x);}}out.choices.set(key,v);}}return out;}
 function champion(id){return roster.find(c=>c.id===id)||{id,name:id,tags:[]};}
 // Collected games per champion, role and opponent, so selectors can lead to data instead of empty tables.
 function coverage(){const out=new Map();for(const b of (coverageRows.length?coverageRows:stats.buckets)){const c=out.get(b.champion)||{games:0,roles:new Map()};c.games+=b.games;const r=c.roles.get(b.role)||{games:0,opponents:new Map()};r.games+=b.games;r.opponents.set(b.opponent,(r.opponents.get(b.opponent)||0)+b.games);c.roles.set(b.role,r);out.set(b.champion,c);}return out;}
@@ -60,7 +61,7 @@ function render(){
   $('#opponent').classList.toggle('is-any',state.opponent==='All matchups');
   const base=state.opponent==='All matchups'?null:selectionFor('All matchups');
   renderTape(selected,base);
-
+  
   document.querySelectorAll('.matchup-chip').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.opp===state.opponent)));
   const updated=activeSource?.generatedAt||stats.generatedAt;
   const shownPatches=(stats.patches||[]).map(patchLabel).sort().reverse();

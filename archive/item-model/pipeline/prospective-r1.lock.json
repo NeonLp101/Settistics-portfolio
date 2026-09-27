@@ -1,0 +1,18 @@
+{
+ "round": "r1",
+ "design": "development games train; games collected after them test",
+ "frozen_at": "2026-09-25T15:35:22.029151+00:00",
+ "hashes": {
+  "pipeline/prospective.py": "c9a5b9070e45516c585eebb5aca4e9da55dbc8a4578712e8d36bc1c7cf472853",
+  "pipeline/recommender.py": "bcb179a2abb1d7ed33cc80ca2a5420230127ccc071ae44854bbbef0c5715c3ad",
+  "pipeline/decisions.py": "f83e8b96d383b9297bb9184b84796b8a4dffeace50cc4313e4d208fe258f7d9c",
+  "pipeline/branches.py": "0b621e5925ff42e225fbe28673760b41859d11e3c90ae8634a587d1e4db94bcd",
+  "pipeline/features.py": "71bf8571c1dda1acec7f82988de76b58287313d9161d47eda78bf9db6b1d8218",
+  "pipeline/wpa.py": "06893ca3a8981f9cefe53a45ef106ddc1ec0eb49d3796194460a0edb288dbaed",
+  "pipeline/backends.py": "eab472d396a26301fcf146faf06c5534a82ccecb9f7c8feaf3ac100e7254ffac",
+  "engine.valid_match": "64a47c3199301cb6cc241ca18a242887714d5710bdbaa7c4262aea23fb342c98",
+  "engine.opponent_for": "d9e74532755a09ccccad4f261bb38689cd2615d86f427121f7748fd67c457c02",
+  "engine.purchases": "5407ebe1dbfe7ce69c0b976edfaf13d5fb3b02cb26d6bc1574adf17c80957e3c",
+  "engine.item_class": "266a92521f7453b6a06c239516e119f0b65d002995c4438730d4a202e5159e87"
+ }
+}

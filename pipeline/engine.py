@@ -25,12 +25,13 @@ PLATFORMS = dict(euw1="europe", eun1="europe", tr1="europe", ru="europe",
                  na1="americas", br1="americas", la1="americas", la2="americas",
                  kr="asia", jp1="asia", oc1="sea", sg2="sea", tw2="sea", vn2="sea")
 ROLES = {"TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}
+FIRSTS = ("firstBloodKill", "firstBloodAssist", "firstTowerKill", "firstTowerAssist")  # Riot's participant flags
 # Games the site, its model and its exports may use. Games that started at or after the research seal are
 # reserved for one-time confirmation runs (docs/current-state.md), and focused crawls ('focus <champion>:<role>')
 # oversample one champion, which would skew every other champion's numbers.
-SEALED_FROM_MS = 1790258400000  # 2026-09-24 14:00 UTC
+FUTURE_SEAL_MS = 1790400420000  # 2026-09-26 05:27 UTC; set for the archived item model's evaluation, still held back
 USABLE_SQL = ("status='done' AND timeline IS NOT NULL AND (source IS NULL OR source NOT LIKE 'focus %') "
-              f"AND json_extract(detail,'$.info.gameStartTimestamp') < {SEALED_FROM_MS}")
+              f"AND json_extract(detail,'$.info.gameStartTimestamp') < {FUTURE_SEAL_MS}")
 
 def utc():
     return datetime.now(timezone.utc).isoformat()
@@ -654,6 +655,7 @@ def extract(match,timeline,items):
         records.append({"matchId":match["metadata"]["matchId"],"playerId":player.get("playerRef",""),
                         "startedAt":info["gameStartTimestamp"],"champion":player["championName"],"opponent":opponent["championName"],
                         "role":player["teamPosition"],"patch":features["patch"],"region":info.get("platformId","UNKNOWN"),"win":int(player["win"]),
+                        **{k:int(bool(player.get(k))) for k in FIRSTS},
                         "features":features,"package":package if package and not uncertain and not upgraded_early and not early_combat else None,
                         "packageLabel":package_label,"runes":rune_page if rune_ids else None,"spells":features["spells"],
                         "keystone":str(player["perks"]["styles"][0]["selections"][0]["perk"]) if player.get("perks",{}).get("styles") and player["perks"]["styles"][0].get("selections") else None,
@@ -694,10 +696,12 @@ def aggregate(records, include_paths=True):
     for r in records:
         key = (r["champion"],r["opponent"],r["role"],r["patch"],r["region"])
         if key not in buckets:
-            buckets[key] = dict(zip(("champion","opponent","role","patch","region"),key), games=0,wins=0,eligible={"packages":0,"items":0,"runes":0,"spells":0,"build":0,"keystone":0,"skills":0},choices={})
+            buckets[key] = dict(zip(("champion","opponent","role","patch","region"),key), games=0,wins=0,**dict.fromkeys(FIRSTS,0),eligible={"packages":0,"items":0,"runes":0,"spells":0,"build":0,"keystone":0,"skills":0},choices={})
         b = buckets[key]
         b["games"] += 1
         b["wins"] += r["win"]
+        for k in FIRSTS:
+            b[k] += r.get(k,0)
         # Keep timings and comparisons within one observed first-item / boots-order
         # cohort. Never reconstruct path timing by combining unrelated slot averages.
         if include_paths and not r["ledgerUncertain"] and r.get("build") and r.get("boots"):
@@ -721,6 +725,18 @@ def aggregate(records, include_paths=True):
                 bid, bname, bmin, before = r["boots"]
                 boot = w["boots"].setdefault(f"{bid}:{min(before,3)}", dict(name=bname, games=0, wins=0, timeSum=0))
                 boot["games"] += 1; boot["wins"] += r["win"]; boot["timeSum"] += bmin
+            # Route cohort: the same core bought with the same boots at the same position and the same first
+            # component. Every time in one route is summed over the same games, so a displayed route never
+            # combines averages from different groups of players. "-" marks no boots / no component.
+            bid, bname, bmin, before = r["boots"] if r.get("boots") else ("-", "", 0, 0)
+            cid, cname, cmin = r["component"] if r.get("component") else ("-", "", 0)
+            route = w.setdefault("routes", {}).setdefault(f"{bid}:{min(before,3)}:{cid}",
+                dict(bootsName=bname, componentName=cname, games=0, timeSum=[0,0,0], bootsTimeSum=0, componentTimeSum=0))
+            route["games"] += 1
+            for n,(_,_,minute) in enumerate(core):
+                route["timeSum"][n] += minute
+            route["bootsTimeSum"] += bmin
+            route["componentTimeSum"] += cmin
         entries = []
         if r["package"]:
             b["eligible"]["packages"] += 1
@@ -812,8 +828,16 @@ def export(db, args):
     purge(db, None, args, quiet=True)
     return _export(db, args)
 
+def slim(record):
+    """Keep only what the export counts. The per-purchase game state ("pre") and the draft features are
+    large and only used by the model scripts; holding them for every player-game made the export need
+    tens of gigabytes of memory."""
+    record.pop("features", None)
+    record["purchases"] = [{"item":o["item"],"time":o["time"],"name":o["name"]} for o in record["purchases"]]
+    return record
+
 def _export(db, args):
-    records = list(dataset(db,args.champion))
+    records = [slim(r) for r in dataset(db,args.champion)]
     # WPA prototype: predictions written by pipeline/wpa.py, matched to each player's build decisions.
     predictions = {}
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wpa_predictions'").fetchone():
@@ -837,8 +861,12 @@ def _export(db, args):
     model = json.loads(model_file.read_text(encoding="utf-8")) if predictions and model_file.exists() else None
     source_id = "riot-match-v5"
     buckets = aggregate(records)
+    first_objectives = {}
     for bucket in buckets:
         bucket["sourceId"] = source_id
+        role = first_objectives.setdefault(bucket["role"], dict.fromkeys(("games",)+FIRSTS, 0))
+        for k in ("games",)+FIRSTS:
+            role[k] += bucket[k]
     payload = {"schemaVersion":2,"generatedAt":utc(),"status":"observed" if records else "empty",
                "wpaStatus":"prototype" if model else "unavailable",
                "wpaModel":{k:model[k] for k in ("generatedAt","method","games","snapshots","decisions","slotOffsetsPp")}
@@ -849,6 +877,7 @@ def _export(db, args):
                "rankStatus":"unavailable: no historical participant rank snapshots",
                "samplePolicy":"Ladder/manual-seeded convenience sample, not a representative population estimate.",
                "uniqueMatches":len({r['matchId'] for r in records}),
+               "firstObjectives":first_objectives,
                "sources":[{"id":source_id,"name":"Riot Match-V5 timelines","type":"riot_match_timelines",
                            "generatedAt":utc(),"supportsWpaResearch":True,
                            "note":"Locally collected match details and timelines; convenience sample."}],
@@ -1003,11 +1032,21 @@ def purge(db, client, args, quiet=False):
     days = getattr(args, "retention_days", RETENTION_DAYS)
     now = datetime.now(timezone.utc)
     cutoff = now.timestamp() - days * 86400
-    games = db.execute("DELETE FROM matches WHERE detail IS NOT NULL AND json_extract(detail,'$.info.gameStartTimestamp') < ?",
-                       (int(cutoff * 1000),)).rowcount
-    seeds = db.execute("DELETE FROM players WHERE observed_at < ? OR COALESCE(last_active, observed_at) < ?",
-                       (datetime.fromtimestamp(cutoff, timezone.utc).isoformat(),
-                        (now - timedelta(days=PLAYER_IDLE_DAYS)).isoformat())).rowcount
+    game_cutoff = int(cutoff * 1000)
+    seed_cutoffs = (datetime.fromtimestamp(cutoff, timezone.utc).isoformat(),
+                    (now - timedelta(days=PLAYER_IDLE_DAYS)).isoformat())
+    # The large JSON scan is read-only when nothing has expired. A no-op DELETE still holds
+    # SQLite's single write lock throughout that scan and can stop other regional crawlers.
+    expired_game = db.execute("SELECT 1 FROM matches WHERE detail IS NOT NULL "
+                              "AND json_extract(detail,'$.info.gameStartTimestamp') < ? LIMIT 1",
+                              (game_cutoff,)).fetchone()
+    expired_seed = db.execute("SELECT 1 FROM players WHERE observed_at < ? "
+                              "OR COALESCE(last_active, observed_at) < ? LIMIT 1", seed_cutoffs).fetchone()
+    games = (db.execute("DELETE FROM matches WHERE detail IS NOT NULL "
+                        "AND json_extract(detail,'$.info.gameStartTimestamp') < ?",
+                        (game_cutoff,)).rowcount if expired_game else 0)
+    seeds = (db.execute("DELETE FROM players WHERE observed_at < ? "
+                        "OR COALESCE(last_active, observed_at) < ?", seed_cutoffs).rowcount if expired_seed else 0)
     db.commit()
     if games or seeds:
         db.execute("VACUUM")  # do not leave deleted rows readable in free pages

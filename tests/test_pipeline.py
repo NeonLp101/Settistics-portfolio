@@ -12,7 +12,6 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'pipeline'))
 from engine import extract, aggregate, purchases, pre_features, connect, Client, RiotError, collect, valid_match
-from candidates import recipe_cost, screen
 
 ITEMS={
  '1054':{'name':"Doran's Shield",'gold':{'total':450,'purchasable':True},'maps':{'11':True}},
@@ -71,10 +70,26 @@ class ExtractionTests(unittest.TestCase):
     def test_early_combat_excludes_package(self):
         m,t=fixture();t['info']['frames'][1]['events'].append(dict(type='CHAMPION_KILL',timestamp=20000))
         self.assertIsNone(extract(m,t,ITEMS)[0]['package'])
+    def test_first_blood_and_tower_are_counted_per_bucket(self):
+        m,t=fixture();m['info']['participants'][0].update(firstBloodKill=True,firstTowerAssist=True)
+        sett=next(b for b in aggregate(extract(m,t,ITEMS)) if b['champion']=='Sett')
+        self.assertEqual((sett['games'],sett['firstBloodKill'],sett['firstBloodAssist'],sett['firstTowerKill'],sett['firstTowerAssist']),(1,1,0,0,1))
+        teemo=next(b for b in aggregate(extract(m,t,ITEMS)) if b['champion']=='Teemo')
+        self.assertEqual(teemo['firstBloodKill'],0)
     def test_dedupe_purchase_occurrence(self):
         m,t=fixture();b=aggregate([extract(m,t,ITEMS)[0]])[0]
         sword=next(c for c in b['choices'] if c['id']=='1036')
         self.assertEqual(sword['games'],1);self.assertAlmostEqual(sword['timeSum'],70/60)
+    def test_slim_export_records_aggregate_exactly_like_full_ones(self):
+        import copy
+        from engine import slim
+        m, t = fixture()
+        full = extract(m, t, ITEMS)
+        self.assertTrue(any(o.get("pre") for r in full for o in r["purchases"]))
+        light = [slim(copy.deepcopy(r)) for r in full]
+        self.assertEqual(aggregate(full), aggregate(light))
+        self.assertTrue(all("features" not in r and all(set(o) == {"item", "time", "name"} for o in r["purchases"]) for r in light))
+
     def test_export_contains_no_player_identifiers(self):
         m,t=fixture();text=json.dumps(aggregate(extract(m,t,ITEMS)))
         self.assertNotIn('private-player',text);self.assertNotIn('EUW1_123',text)
@@ -97,11 +112,11 @@ class DatabaseTests(unittest.TestCase):
             r=db.execute('SELECT id FROM matches ORDER BY collected_at IS NOT NULL,collected_at,id DESC').fetchone()
             self.assertEqual(r[0],'EUW1_1');db.close()
     def test_site_data_excludes_sealed_and_focus_games(self):
-        from engine import SEALED_FROM_MS, USABLE_SQL
+        from engine import FUTURE_SEAL_MS, USABLE_SQL
         with tempfile.TemporaryDirectory() as d:
             db=connect(Path(d)/'test.sqlite')
-            for mid,source,start in [('EUW1_1','ladder',SEALED_FROM_MS-1),('EUW1_2','focus kaisa:BOTTOM',SEALED_FROM_MS-1),
-                                     ('EUW1_3','snowball',SEALED_FROM_MS),('EUW1_4',None,SEALED_FROM_MS-60000)]:
+            for mid,source,start in [('EUW1_1','ladder',FUTURE_SEAL_MS-1),('EUW1_2','focus kaisa:BOTTOM',FUTURE_SEAL_MS-1),
+                                     ('EUW1_3','snowball',FUTURE_SEAL_MS),('EUW1_4',None,FUTURE_SEAL_MS-60000)]:
                 db.execute("INSERT INTO matches(id,platform,source,detail,timeline,status) VALUES(?,'euw1',?,?,'{}','done')",
                            (mid,source,json.dumps({'info':{'gameStartTimestamp':start}})))
             self.assertEqual([r[0] for r in db.execute(f"SELECT id FROM matches WHERE {USABLE_SQL} ORDER BY id")],['EUW1_1','EUW1_4'])
@@ -123,22 +138,6 @@ class RateTests(unittest.TestCase):
         with patch('engine.urlopen',side_effect=[error,Response(b'{}')]),patch.object(c,'pace'),patch.object(c,'pause') as pause:
             self.assertEqual(c.get('euw1.api.riotgames.com','/test','test'),{})
             pause.assert_called_once_with(91)
-
-class CandidateTests(unittest.TestCase):
-    def test_recipe_discount(self):
-        cost,used=recipe_cost('9999',['1036'],ITEMS)
-        self.assertEqual(cost,650);self.assertEqual(used['1036'],1)
-    def test_two_owned_components_not_double_counted(self):
-        cost,used=recipe_cost('9999',['1036','1036'],ITEMS)
-        self.assertEqual(cost,300);self.assertEqual(sum(used.values()),2)
-    def test_affordability(self):
-        result=screen(['9999'],['1036'],649,ITEMS)[0]
-        self.assertFalse(result['budgetAndSlotsPass']);self.assertFalse(result['gameLegalityVerified'])
-    def test_slots(self):
-        result=screen(['1001'],['1054']*6,1000,ITEMS)[0]
-        self.assertFalse(result['budgetAndSlotsPass'])
-    def test_special_rules_declined(self):
-        self.assertFalse(screen(['2003'],[],1000,ITEMS)[0]['supported'])
 
 if __name__=='__main__':unittest.main()
 
@@ -181,6 +180,29 @@ class PrivacyTests(unittest.TestCase):
             self.assertEqual({r[0] for r in db.execute("SELECT id FROM matches")}, {'EUW1_2', 'EUW1_3', 'EUW1_4'})
             self.assertEqual({r[0] for r in db.execute("SELECT puuid FROM players")}, {'new', 'active'})
             db.close()
+
+    def test_noop_purge_does_not_take_the_shared_writer_lock(self):
+        import engine
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'db.sqlite'
+            db = connect(path)
+            db.execute("INSERT INTO matches(id,platform,detail,status) VALUES(?,?,?,?)",
+                       ('EUW1_1', 'euw1', json.dumps({'info': {'gameStartTimestamp':
+                           int(engine.datetime.now(engine.timezone.utc).timestamp() * 1000)}}), 'done'))
+            db.commit()
+            writer = sqlite3.connect(path, timeout=0.1)
+            writer.execute('BEGIN IMMEDIATE')
+            reader = sqlite3.connect(path, timeout=0.1)
+            try:
+                with patch('sys.stdout', new_callable=io.StringIO):
+                    engine.purge(reader, None, SimpleNamespace(retention_days=730))
+                self.assertEqual(reader.execute("SELECT count(*) FROM matches").fetchone()[0], 1)
+            finally:
+                reader.close()
+                writer.rollback()
+                writer.close()
+                db.close()
 
 
 class BuildPathTests(unittest.TestCase):
@@ -562,6 +584,31 @@ class BestBuildTests(unittest.TestCase):
         self.assertEqual(build['boots']['3047:1']['games'], 2)
         self.assertNotIn('_builds', json.dumps(b))
         self.assertEqual({c['kind'] for c in b['choices'] if c['id'] == '3044'}, {'component'})
+
+    def test_route_cohorts_keep_boots_first_and_item_first_timings_apart(self):
+        def rec(boots_min, before, times, comp=('3044', 'Phage', 7.0), boots=True):
+            return dict(champion='Sett', opponent='Teemo', role='TOP', patch='16.19', region='EUW1', win=1, package=None,
+                        ledgerUncertain=False, purchases=[], runes=None, spells=None,
+                        build=[('6631', 'Stridebreaker', times[0]), ('3053', "Sterak's Gage", times[1]), ('3071', 'Black Cleaver', times[2])],
+                        boots=('3047', 'Plated Steelcaps', boots_min, before) if boots else None, component=comp)
+        item_first = [rec(14.0, 1, (12.0, 21.0, 27.0)), rec(16.0, 1, (14.0, 23.0, 29.0))]
+        boots_first = [rec(8.0, 0, (15.0, 23.0, 29.0), ('3044', 'Phage', 10.0))]
+        late = rec(33.0, 4, (12.0, 21.0, 27.0), None)
+        no_boots = rec(0, 0, (12.0, 21.0, 27.0), boots=False)
+        build = aggregate(item_first + boots_first + [late, no_boots])[0]['builds'][0]
+        routes = build['routes']
+        self.assertEqual(set(routes), {'3047:1:3044', '3047:0:3044', '3047:3:-', '-:0:3044'})
+        self.assertEqual(build['games'], 5)
+        r = routes['3047:1:3044']
+        self.assertEqual((r['games'], r['timeSum'], r['bootsTimeSum'], r['componentTimeSum']), (2, [26.0, 44.0, 56.0], 30.0, 14.0))
+        r = routes['3047:0:3044']
+        self.assertEqual((r['games'], r['timeSum'], r['bootsTimeSum'], r['componentTimeSum']), (1, [15.0, 23.0, 29.0], 8.0, 10.0))
+        self.assertEqual((routes['3047:3:-']['bootsTimeSum'], routes['3047:3:-']['componentName']), (33.0, ''))
+        self.assertEqual((routes['-:0:3044']['bootsName'], routes['-:0:3044']['bootsTimeSum']), ('', 0))
+        # Every route's own item times keep the order its players followed.
+        for r in routes.values():
+            self.assertLessEqual(r['timeSum'][0], r['timeSum'][1])
+        self.assertEqual(sum(r['games'] for r in routes.values()), build['games'])
 
 
 class ReliabilityTests(unittest.TestCase):

@@ -29,22 +29,64 @@ const BUILDS=`[{builds:[
  {id:'6631>2501>3053',items:['6631','2501','3053'],names:['Stridebreaker','Bloodmail',"Sterak's Gage"],games:30,wins:15,timeSum:[390,630,810],components:{},boots:{'3047:0':{name:'Plated Steelcaps',games:30,wins:15,timeSum:270}}}]},
  {builds:[{id:'6631>3053>3071',items:['6631','3053','3071'],names:['Stridebreaker',"Sterak's Gage",'Black Cleaver'],games:4,wins:3,timeSum:[48,84,108],
   components:{'3044':{name:'Phage',games:4,wins:3,timeSum:28}},boots:{'3047:1':{name:'Plated Steelcaps',games:4,wins:3,timeSum:56}}}]}]`;
-test('builds merge across buckets and play out in purchase order',()=>{
+// Same core, two boots orders with their own timings. Item-first: Phage 7, Stridebreaker 12, Steelcaps 14, Sterak's 21, Cleaver 27.
+// Boots-first: Steelcaps 8, Phage 10, Stridebreaker 15, Sterak's 23, Cleaver 29. Split over two buckets (e.g. two regions).
+const ROUTED=`[{builds:[{id:'6631>3053>3071',items:['6631','3053','3071'],names:['Stridebreaker',"Sterak's Gage",'Black Cleaver'],games:30,wins:16,timeSum:[400,650,830],
+  components:{'3044':{name:'Phage',games:28,wins:15,timeSum:230}},boots:{'3047:0':{name:'Plated Steelcaps',games:14,wins:7,timeSum:112},'3047:1':{name:'Plated Steelcaps',games:10,wins:6,timeSum:140}},
+  routes:{'3047:1:3044':{bootsName:'Plated Steelcaps',componentName:'Phage',games:10,timeSum:[120,210,270],bootsTimeSum:140,componentTimeSum:70},
+   '3047:0:3044':{bootsName:'Plated Steelcaps',componentName:'Phage',games:12,timeSum:[180,276,348],bootsTimeSum:96,componentTimeSum:120},
+   '3047:0:3077':{bootsName:'Plated Steelcaps',componentName:'Tiamat',games:2,timeSum:[32,48,60],bootsTimeSum:16,componentTimeSum:18},
+   '3047:2:-':{bootsName:'Plated Steelcaps',componentName:'',games:3,timeSum:[39,63,81],bootsTimeSum:69,componentTimeSum:0}}}]},
+ {builds:[{id:'6631>3053>3071',items:['6631','3053','3071'],names:['Stridebreaker',"Sterak's Gage",'Black Cleaver'],games:14,wins:7,timeSum:[200,300,400],components:{},boots:{},
+  routes:{'3047:1:3044':{bootsName:'Plated Steelcaps',componentName:'Phage',games:6,timeSum:[72,126,162],bootsTimeSum:84,componentTimeSum:42},
+   '3047:0:3044':{bootsName:'Plated Steelcaps',componentName:'Phage',games:8,timeSum:[120,184,232],bootsTimeSum:64,componentTimeSum:80}}}]}]`;
+const routePlan=(buckets,route)=>json(`(()=>{const p=guideBuildPlan(guideBuilds(${buckets})[0],${route?`'${route}'`:'null'});return{route:p.route?.id,timing:p.timing,steps:p.steps.map(s=>s.kind+':'+s.id+':'+(s.minute==null?'-':Math.round(s.minute*100)/100)),options:(p.routes||[]).map(r=>r.id+':'+r.games)}})()`);
+test('boots-first and item-first are separate routes, each timed only from its own games',()=>{
+ const first=routePlan(ROUTED,'3047:0');
+ assert.equal(first.route,'3047:0');
+ assert.deepEqual(first.timing,{level:'route',games:20,component:'Phage'});
+ assert.deepEqual(first.steps,['boots:3047:8','component:3044:10','slot1:6631:15','slot2:3053:23','slot3:3071:29']);
+ const second=routePlan(ROUTED,'3047:1');
+ assert.deepEqual(second.timing,{level:'route',games:16,component:'Phage'});
+ assert.deepEqual(second.steps,['component:3044:7','slot1:6631:12','boots:3047:14','slot2:3053:21','slot3:3071:27']);
+ // Routes are offered most common first: boots-first has 22 games (20 with Phage, 2 with Tiamat) across both buckets.
+ assert.deepEqual(first.options,['3047:0:22','3047:1:16','3047:2:3']);
+ assert.equal(routePlan(ROUTED).route,'3047:0');
+ assert.equal(routePlan(ROUTED,'9999:9').route,'3047:0');
+});
+test('a thin route shows its observed order without times; a thin component falls back to the whole route',()=>{
+ const thin=routePlan(ROUTED,'3047:2');
+ assert.deepEqual(thin.timing,{level:'none',games:3,reason:'thin'});
+ assert.deepEqual(thin.steps,['slot1:6631:-','slot2:3053:-','boots:3047:-','slot3:3071:-']);
+ // 20 route games, but no single first component reaches 15: time the route itself and leave the component out.
+ const split=ROUTED.replace("'3047:0:3044':{bootsName:'Plated Steelcaps',componentName:'Phage',games:8","'3047:0:1036':{bootsName:'Plated Steelcaps',componentName:'Long Sword',games:8");
+ const fallback=routePlan(split,'3047:0');
+ assert.deepEqual(fallback.timing,{level:'boots',games:22});
+ // (96 + 16 + 64) boots minutes over 12 + 2 + 8 games: the whole route, not one component's subset.
+ assert.equal(fallback.steps[0],'boots:3047:8');
+ assert.equal(fallback.steps[1],'slot1:6631:15.09');
+ assert.ok(fallback.steps.every(s=>!s.startsWith('component')));
+ assert.match(run(`guideCohortNote({games:44,wins:23},guideBuildPlan(guideBuilds(${split})[0],'3047:0'))`),/Build record.*44 games with these three items.*Timings.*22 games on this route · first component varies/);
+ assert.match(run(`guideTimeline(guideBuildPlan(guideBuilds(${ROUTED})[0],'3047:2').steps,[],false,{level:'none',games:3,reason:'thin'})`),/Timing unavailable for this route[^]*Only 3 games followed this exact route/);
+});
+test('older exports without route cohorts never combine averages from different groups',()=>{
  const merged=run(`guideBuilds(${BUILDS})`);
  const b=merged.find(w=>w.id==='6631>3053>3071');
  assert.equal(b.games,12);assert.equal(b.wins,9);assert.equal(b.timeSum[0],144);assert.equal(b.components['3044'].games,10);
- const plan=json(`guideBuildPlan(guideBuilds(${BUILDS}).find(w=>w.id==='6631>3053>3071')).map(s=>s.kind+':'+s.id+':'+s.minute)`);
- // first component first, then item 1, boots after one item, then items 2 and 3
- assert.deepEqual(plan,['component:3044:7','slot1:6631:12','boots:3047:14','slot2:3053:21','slot3:3071:27']);
- assert.deepEqual(json(`guideBuildPlan(guideBuilds(${BUILDS}).find(w=>w.id==='6631>2501>3053')).map(s=>s.kind)`),['boots','slot1','slot2','slot3']);
- assert.deepEqual(json(`guideBuildPlan({items:['6631','3053','3071'],names:['A','B','C'],games:10,timeSum:[120,200,270],boots:{'3047:0':{name:'Boots',games:10,timeSum:80}},components:{'3044':{name:'Part',games:10,timeSum:90}}}).map(s=>s.kind)`),['boots','component','slot1','slot2','slot3']);
+ const old=json(`(()=>{const p=guideBuildPlan(guideBuilds(${BUILDS}).find(w=>w.id==='6631>3053>3071'));return{t:p.timing,s:p.steps.map(s=>s.kind+':'+s.minute)}})()`);
+ assert.deepEqual(old,{t:{level:'none',games:0,reason:'noRoutes'},s:['slot1:null','boots:null','slot2:null','slot3:null']});
+ // One bucket from an older export makes the merged route timings incomplete, so they are dropped.
+ const mixed=`[${ROUTED.slice(1,-1)},{builds:[{id:'6631>3053>3071',items:['6631','3053','3071'],names:['A','B','C'],games:5,wins:2,timeSum:[60,90,120],components:{},boots:{}}]}]`;
+ assert.equal(run(`guideBuilds(${mixed})[0].routes`),null);
+ assert.match(run(`guideBuildMarkup(guideBuildPlan(guideBuilds(${BUILDS})[0]).steps)`),/class="when untimed">—</);
 });
 test('build route keeps each observed item in order and exposes the decorative path to reduced-motion users',()=>{
- const html=run(`guideBuildMarkup(guideBuildPlan(guideBuilds(${BUILDS}).find(w=>w.id==='6631>3053>3071')))`);
+ const html=run(`guideBuildMarkup(guideBuildPlan(guideBuilds(${ROUTED})[0],'3047:1').steps)`);
  assert.match(html,/class="build-route" aria-hidden="true"/);
- assert.match(html,/Step 1 of 5, Phage/);
- assert.match(html,/Step 5 of 5, Black Cleaver/);
+ assert.match(html,/Step 1 of 5, Phage at 7:00/);
+ assert.match(html,/Step 5 of 5, Black Cleaver at 27:00/);
  assert.equal((html.match(/class="build-step/g)||[]).length,5);
+ assert.doesNotMatch(html,/of these games/);
 });
 test('build ranking pulls small samples toward the average',()=>{
  // 11 games at 64% must not beat 200 games at 55% when the average is 50%.
@@ -109,50 +151,16 @@ test('pooled role curve is shown, labeled, only when the champion curve is not r
  assert.doesNotMatch(run(`guideCurveSection(${rows},${rows}[0],'boots','Steelcaps','Boots')`),/<svg/);
  run(`delete stats.reliability;delete stats.pooledEffects`);
 });
-const RESEARCH=JSON.stringify({schemaVersion:1,kind:'item_model_research_preview',status:'research_preview',claimStatus:'no_confirmed_advantage',
- recommendation:'observed_baseline_route_a',routeLevelClaim:false,sourcePatches:['16.19'],predictionFields:['finalWin','goldLeadChange5','takedowns5','deaths5','championDamage5','timeAlive5s'],
- model:{version:'recommender-experimental-v0',trainedAt:'2026-09-25T06:27:33Z',fitRows:460896,policyVerdicts:{base:'insufficient_evidence',enriched:'insufficient_evidence'},headlineClaimsAllowed:false,minArmTrainRows:30,preferenceMargin:.03},
- entries:[{champion:'Kaisa',role:'BOTTOM',stage:'slot1',patch:'16.19',scope:'first_distinguishing_component',baselineRoute:'6672',alternativeRoute:'3087',support:{contexts:6057,routeA:4864,routeB:1193,matches:6057},status:'research_preview',supported:true,
-   predicted:{routeA:[.4949,-13,1.82,.9,1989,285.2],routeB:[.5012,26,1.82,.9,2001,285.4]},modelLean:'routeB'},
-  {champion:'Kaisa',role:'BOTTOM',stage:'boots',patch:'16.19',scope:'boots_upgrade_purchase',baselineRoute:'3006',alternativeRoute:'3008',support:{contexts:40,routeA:25,routeB:15,matches:40},status:'research_preview',supported:false,predicted:null,modelLean:null}]});
-const card=(slot,research=`{status:'ready',doc:${RESEARCH}}`)=>run(`(()=>{guideAssets={itemNames:{'6672':'Kraken Slayer','3087':'Statikk Shiv','3006':"Berserker's Greaves",'3008':'Swiftmarch'},itemIds:[]};return guideResearchCard(${research},'Kaisa','BOTTOM','${slot}')})()`);
-test('model research card shows predictions as an experimental, pooled preview and keeps the observed route',()=>{
- const html=card('slot1');
- assert.match(html,/Experimental · research preview/);
- assert.match(html,/Pooled across all matchups and regions · patch 26\.19 · not specific to this opponent/);
- assert.match(html,/No model-backed switch/);
- assert.match(html,/Kraken Slayer is this comparison’s most common training route/);
- assert.match(html,/First component bought toward Kraken Slayer or Statikk Shiv; not the finished items/);
- assert.match(html,/<td>49\.5%<i class=\"mr-bar a\"[^]*?<th scope=\"row\">Final win chance<\/th><td>50\.1%/);
- assert.match(html,/<td>−13<i[^]*?Team gold-lead change<\/th><td>26<i/);
- // The model's side of the card never labels an item as the model's pick.
- assert.doesNotMatch(html,/mr-tag">[^<]*lean/i);
- assert.match(html,/Model lean: Statikk Shiv, by 0\.6 points of predicted win chance, smaller than the 3-point margin/);
- assert.match(html,/A prediction, not a measured or confirmed advantage/);
- assert.match(html,/6[.,]057 training decisions/);assert.match(html,/No uncertainty interval/);
- assert.match(html,/held-out policy check: insufficient evidence · no route-level claim/);
- // No win-rate gain wording: no signed pp values, no "better", no model pick presented as the recommendation.
- assert.doesNotMatch(html,/\+\s?\d|\bpp\b|better|recommend(ed)? Statikk|Recommendation stays Statikk/i);
-});
-test('model research card degrades gracefully',()=>{
- assert.match(card('boots'),/No model-backed switch/);
- assert.match(card('boots'),/Berserker&#39;s Greaves is this comparison’s most common training route/);
- assert.match(card('boots'),/Too few training decisions for model predictions: 25 toward .* and 15 toward .*; needs 30 of each/);
- assert.doesNotMatch(card('boots'),/Model lean|<table/);
- const tiny=RESEARCH.replace('[0.5012,26,','[0.4953,26,');
- assert.match(card('slot1',`{status:'ready',doc:${tiny}}`),/No model lean: the predicted final win chances are equal to one decimal/);
- assert.doesNotMatch(card('slot1',`{status:'ready',doc:${tiny}}`),/Model lean:/);
- assert.match(card('slot2'),/No model comparison for Kaisa’s 2nd item/);
- assert.match(run(`guideResearchCard({status:'ready',doc:${RESEARCH}},'Kaisa','BOTTOM','slot1','16.18')`),/No model comparison/);
- assert.match(card('slot4'),/covers the 1st, 2nd and 3rd item and boots decisions only/);
- assert.match(card('slot1',`{status:'missing',doc:null}`),/not part of this build\. The observed build below is unaffected/);
- assert.match(card('slot1',`{status:'loading',doc:null}`),/Loading the model preview/);
-});
-test('model research loader accepts only the unclaimed preview schema',()=>{
- assert.equal(run(`guideResearchValid(${RESEARCH})`),true);
- for(const change of ["d.claimStatus='supported'","d.routeLevelClaim=true","d.recommendation='model'","d.model.headlineClaimsAllowed=true","d.predictionFields.reverse()","d.schemaVersion=2","d.entries=null"])
-  assert.equal(run(`(()=>{const d=${RESEARCH};${change};return guideResearchValid(d)})()`),false,change);
- assert.equal(run(`guideResearchValid(null)`),false);
+test('fun fact compares first blood and first tower with the role average',()=>{
+ const sel=json(`merged([{games:150,wins:75,firstBloodKill:24,firstBloodAssist:15,firstTowerKill:6,firstTowerAssist:30,choices:[]},
+  {games:50,wins:25,firstBloodKill:8,firstBloodAssist:5,firstTowerKill:4,firstTowerAssist:10,choices:[]},{games:40,wins:20,choices:[]}])`);
+ assert.deepEqual(sel.firsts,{games:200,firstBloodKill:32,firstBloodAssist:20,firstTowerKill:10,firstTowerAssist:40}); // imports without flags are left out
+ run(`stats.firstObjectives={JUNGLE:{games:1000,firstBloodKill:140,firstBloodAssist:120,firstTowerKill:50,firstTowerAssist:150}}`);
+ const fact=run(`guideFact(${JSON.stringify(sel)},'Sylas','JUNGLE','Jungle')`);
+ assert.equal(fact,'Fun fact: Sylas draws first blood in 16% of these games (jungle average 14%) and helps take the first tower in 25% (jungle average 20%).');
+ assert.equal(run(`guideFact({firsts:{games:99,firstBloodKill:9,firstBloodAssist:0,firstTowerKill:0,firstTowerAssist:0}},'Sylas','JUNGLE','Jungle')`),'');
+ run(`delete stats.firstObjectives`);
+ assert.match(run(`guideFact(${JSON.stringify(sel)},'Sylas','JUNGLE','Jungle')`),/in 16% of these games and helps take the first tower in 25%\.$/);
 });
 test('counters rank lane opponents by win rate pulled toward the usual rate',()=>{
  const buckets=`[

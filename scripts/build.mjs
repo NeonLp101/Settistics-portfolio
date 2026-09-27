@@ -2,7 +2,6 @@
 import {mkdir, copyFile, readdir} from 'node:fs/promises';
 import {fetchStatic} from './fetch-static.mjs';
 import {buildData} from './build-data.mjs';
-import {copyRecommendations} from './recommendation-schema.mjs';
 await mkdir('public/data',{recursive:true});
 for (const file of ['index.html','data-client.js','app.js','guide.js','guide.css','theme.js','api-ui.js','api-ui.css','fonts.css','impressum.html','datenschutz.html','riot.txt']) await copyFile(file,`public/${file}`);
 await mkdir('public/fonts',{recursive:true});
@@ -11,6 +10,4 @@ const ddragon=await fetchStatic('public/ddragon');
 console.log(`Self-hosted fonts and Data Dragon ${ddragon.version} (${ddragon.champions.length} champions).`);
 const data=await buildData();
 console.log(`Aggregates: ${data.buckets} buckets in ${data.champions} champion shards${data.streamed?' (large export, parsed per bucket)':''}.`);
-const preview=await copyRecommendations('data/public/recommendations.json','public/data/recommendations.json');
-console.log(preview?`Model research preview: ${preview.entries.length} pairs, ${preview.model.version} (predictions only, no confirmed advantage).`:'No model research preview (optional).');
 console.log(`Built public site: ${data.index.uniqueMatches} locally collected matches, ${data.imports} aggregate import(s). No private files copied.`);
