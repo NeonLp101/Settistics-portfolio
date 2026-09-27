@@ -12,9 +12,12 @@ const state={champion:'Sett',opponent:'All matchups',tab:'build',sort:'games',di
 let championChosen=false;
 let stats={buckets:[],sources:[],status:'loading'},roster=[],runeNames={},runeTree={},spellNames={},completedItems=new Set(),cdn='';
 let loadError='',rosterError='',coverageRows=[];const championCache=new Map();
+// Champions whose file failed to load in the background (as an opponent): picking them retries the download.
+const failedLoads=new Set();
 const options=(node,values,current)=>{node.replaceChildren(...values.map(v=>new Option(v.label??v,v.value??v)));if([...node.options].some(o=>o.value===current))node.value=current;};
-let dataGeneration=0;
-async function fetchJson(url){const res=await fetch(url,{cache:'no-cache',signal:AbortSignal.timeout(15000)});if(!res.ok)throw new Error(`HTTP ${res.status}`);return res.json();}
+let dataGeneration=0,firstStats=true;
+// Versioned live-data files never change, so the browser cache may answer them; everything else revalidates.
+async function fetchJson(url){const pinned=url.includes('version='),res=await fetch(url,{cache:pinned?'default':'no-cache',signal:AbortSignal.timeout(pinned?30000:15000)});if(!res.ok)throw new Error(`HTTP ${res.status}`);return res.json();}
 const liveData=typeof createDataClient==='function'?createDataClient(fetchJson,()=>{dataGeneration++;championCache.clear();stats.buckets=[];setTimeout(()=>loadStats(),0);}):null;
 async function json(url){return liveData&&url.startsWith('data/')?liveData.get(url.slice(5)):fetchJson(url);}
 // A large champion is split into parts (<id>.json, <id>.2.json, ...) to fit the live-data response limit.
@@ -42,7 +45,9 @@ const FIRSTS=['firstBloodKill','firstBloodAssist','firstTowerKill','firstTowerAs
 function merged(buckets){const out={games:0,wins:0,firsts:{games:0,...Object.fromEntries(FIRSTS.map(k=>[k,0]))},eligible:{packages:0,items:0,runes:0,spells:0,build:0,keystone:0,skills:0},choices:new Map()};for(const b of buckets){out.games+=b.games;out.wins+=b.wins;if(b.firstBloodKill!==undefined){out.firsts.games+=b.games;for(const k of FIRSTS)out.firsts[k]+=b[k]||0;}for(const k of Object.keys(out.eligible))out.eligible[k]+=b.eligible?.[k]||0;for(const c of b.choices){const key=c.kind+':'+c.id;const v=out.choices.get(key)||{...c,games:0,wins:0,timeSum:0,timeCount:0,residSum:0,residSq:0,residN:0,laneSum:0,laneSq:0,laneN:0,laneDelta:0,laneUp:0,curveN:0,preSum:0,curveSum:null,curveSq:null};for(const k of ['games','wins','timeSum','timeCount','residSum','residSq','residN','laneSum','laneSq','laneN','laneDelta','laneUp','preSum'])v[k]+=c[k]||0;if(c.curveN){v.curveN=(v.curveN||0)+c.curveN;for(const key of ['curveSum','curveSq']){v[key]=v[key]||c[key].map(()=>0);c[key].forEach((x,i)=>v[key][i]+=x);}}out.choices.set(key,v);}}return out;}
 function champion(id){return roster.find(c=>c.id===id)||{id,name:id,tags:[]};}
 // Collected games per champion, role and opponent, so selectors can lead to data instead of empty tables.
-function coverage(){const out=new Map();for(const b of (coverageRows.length?coverageRows:stats.buckets)){const c=out.get(b.champion)||{games:0,roles:new Map()};c.games+=b.games;const r=c.roles.get(b.role)||{games:0,opponents:new Map()};r.games+=b.games;r.opponents.set(b.opponent,(r.opponents.get(b.opponent)||0)+b.games);c.roles.set(b.role,r);out.set(b.champion,c);}return out;}
+// Built once per data source: renders call this many times, and the index has tens of thousands of rows.
+let coverageMemo=null,coverageSource=null;
+function coverage(){const src=coverageRows.length?coverageRows:stats.buckets;if(src===coverageSource&&coverageMemo)return coverageMemo;const out=new Map();for(const b of src){const c=out.get(b.champion)||{games:0,roles:new Map()};c.games+=b.games;const r=c.roles.get(b.role)||{games:0,opponents:new Map()};r.games+=b.games;r.opponents.set(b.opponent,(r.opponents.get(b.opponent)||0)+b.games);c.roles.set(b.role,r);out.set(b.champion,c);}coverageSource=src;coverageMemo=out;return out;}
 function bestRole(id){const roles=[...(coverage().get(id)?.roles||[])].sort((a,b)=>b[1].games-a[1].games);return roles[0]?.[0];}
 function topOpponents(id,role,n=10){return[...(coverage().get(id)?.roles.get(role)?.opponents||[])].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,n).map(([opp])=>opp);}
 function champOptions(){const cov=coverage();const sel=$('#champ');
@@ -252,7 +257,7 @@ function laneView(sel){
 function opponentView(){
   // The opponent's file holds their games against us, seen from their side.
   const opp=state.opponent;if(opp==='All matchups')return null;
-  if(!championCache.has(opp)){const generation=dataGeneration;championCache.set(opp,null);championBuckets(opp).then(b=>{if(generation!==dataGeneration)return;championCache.set(opp,b);renderSafely();}).catch(()=>{if(generation===dataGeneration)championCache.set(opp,[]);});return null;}
+  if(!championCache.has(opp)){const generation=dataGeneration;championCache.set(opp,null);championBuckets(opp).then(b=>{if(generation!==dataGeneration)return;championCache.set(opp,b);renderSafely();}).catch(()=>{if(generation===dataGeneration){championCache.set(opp,[]);failedLoads.add(opp);}});return null;}
   const list=championCache.get(opp);if(!list)return null;
   const role=$('#role').value,patch=$('#patch').value,region=$('#region').value;
   return merged(list.filter(b=>b.champion===opp&&b.opponent===state.champion&&b.role===role&&(patch==='All collected patches'||b.patch===patch)&&(region==='All collected regions'||b.region===region)));
@@ -303,23 +308,28 @@ function renderSafely(){
   render();
 }
 async function loadStats(){
-  const generation=++dataGeneration;championCache.clear();
+  const generation=++dataGeneration;championCache.clear();failedLoads.clear();
   loadError='';
   try{const data=await json('data/index.json');if(generation!==dataGeneration)return;if(data.schemaVersion!==2||!Array.isArray(data.coverage))throw new Error('Unsupported data export');
     const {coverage:rows,patches:allPatches,regions,...meta}=data;stats={sources:[],...meta,buckets:[],patches:allPatches,regions};coverageRows=rows;
     const patches=[...allPatches].sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
     options($('#patch'),[{value:'All collected patches',label:'All patches'},...patches.map(p=>({value:p,label:`Patch ${patchLabel(p)}`}))],$('#patch').value||patches[0]);
     options($('#region'),[{value:'All collected regions',label:'All regions'},...[...regions].sort().map(r=>({value:r,label:regionLabel(r)}))],$('#region').value);
+    // Links such as ?champion=aatrox&vs=darius: match ids case-insensitively, fall back when unknown.
+    if(state.fromUrl){const known=[...coverage().keys()],fix=id=>known.find(k=>k.toLowerCase()===String(id).toLowerCase());
+      const c=fix(state.champion);if(c)state.champion=c;else championChosen=false;
+      if(state.opponent!=='All matchups')state.opponent=(c&&fix(state.opponent))||'All matchups';state.fromUrl=false;}
     if(!championChosen){const top=[...coverage()].sort((a,b)=>b[1].games-a[1].games||a[0].localeCompare(b[0]))[0];if(top){state.champion=top[0];state.opponent='All matchups';}championChosen=true;}
     if(roster.length)champOptions();
-    const role=bestRole(state.champion);if(role)$('#role').value=role;
+    // Pick the champion's main role on first load; later reloads keep the visitor's role if it has games.
+    const role=bestRole(state.champion);if(role&&(firstStats||!coverage().get(state.champion)?.roles.has($('#role').value)))$('#role').value=role;firstStats=false;
   }catch{stats={buckets:[],sources:[],status:'unavailable'};loadError='Cannot load the statistics export. Run npm run build and serve the public folder.';}
   renderSafely();
   await loadChampion(state.champion);
 }
 async function loadChampion(id){
   const generation=dataGeneration;
-  if(!Array.isArray(championCache.get(id))){
+  if(!Array.isArray(championCache.get(id))||failedLoads.has(id)){failedLoads.delete(id);
     // Champions without collected games simply have no file.
     try{const buckets=await championBuckets(id);if(generation!==dataGeneration)return;championCache.set(id,buckets);if(typeof guideLoadErrors!=='undefined')guideLoadErrors.delete(id);}catch{if(generation!==dataGeneration)return;championCache.set(id,[]);if(typeof guideLoadErrors!=='undefined'&&coverageRows.some(r=>r.champion===id))guideLoadErrors.set(id,'Could not load this champion’s statistics. Retry to load the collected games.');}
   }

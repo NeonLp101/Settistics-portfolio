@@ -12,7 +12,6 @@ function run(exe,args){
   console.log(`[${args[0]}: ${((Date.now()-started)/1000).toFixed(0)} s]`);
 }
 export function refresh(run,python,backend){
-  run(python,['pipeline/compare_gpu.py']);
   run(python,['pipeline/wpa.py','--backend',backend]);
   run(python,['pipeline/engine.py','export','--champion','all']);
   run(process.execPath,['scripts/build.mjs']);

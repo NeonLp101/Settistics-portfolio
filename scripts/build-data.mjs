@@ -99,6 +99,9 @@ export async function buildData({stats:statsPath='data/public/stats.json',import
   }
   // Raw buckets first, then imports, exactly as a single in-memory list would be ordered.
   const total=count+imported.length,bucket=j=>{if(j>=count)return imported[j-count];const b=at(j);return {...b,sourceId:b.sourceId||rawId};};
+  // Sums like timeSum and residSq carry 16 noisy digits; 6 significant digits keep every displayed value
+  // exact to far below its rounding and shrink the gzipped files by about 16%.
+  const compact=v=>typeof v==='number'?(Number.isInteger(v)?v:Number(v.toPrecision(6))):Array.isArray(v)?v.map(compact):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,compact(x)])):v;
   const meta={schemaVersion:2,status:total?'observed':'empty',generatedAt:now.toISOString(),wpaStatus:base.wpaStatus||'unavailable',wpaModel:base.wpaModel||null,laneModel:base.laneModel||null,reliability:base.reliability||null,pooledEffects:base.pooledEffects||null,itemDataMissing:base.itemDataMissing||[],itemDataProvisional:base.itemDataProvisional||{},rankStatus:base.rankStatus||'unavailable',samplePolicy:base.samplePolicy||'Source-specific sampling; inspect provenance.',uniqueMatches:Number(base.uniqueMatches)||0,firstObjectives:base.firstObjectives||null,sources};
   const coverage=new Map(),byChampion=new Map(),patches=new Set(),regions=new Set();
   for(let j=0;j<total;j++){
@@ -108,14 +111,14 @@ export async function buildData({stats:statsPath='data/public/stats.json',import
     if(!byChampion.has(b.champion))byChampion.set(b.champion,[]);byChampion.get(b.champion).push(j);
     patches.add(b.patch);regions.add(b.region);
   }
-  const index={...meta,patches:[...patches],regions:[...regions],
-    coverage:[...coverage].map(([key,games])=>{const [champion,role,opponent]=key.split('|');return{champion,role,opponent,games};})};
+  const index=compact({...meta,patches:[...patches],regions:[...regions],
+    coverage:[...coverage].map(([key,games])=>{const [champion,role,opponent]=key.split('|');return{champion,role,opponent,games};})});
   // [[file name, shard], ...] for one champion: one file, or equal parts when it would exceed splitAbove gzipped.
   const partCount=new Map();
   const slices=(champion,buckets,size)=>{const n=Math.ceil(buckets.length/size);return Array.from({length:n},(_,i)=>
     [i?`champions/${champion}.${i+1}.json`:`champions/${champion}.json`,{schemaVersion:2,champion,part:i+1,parts:n,buckets:buckets.slice(i*size,(i+1)*size)}]);};
   const shardFiles=champion=>{
-    const buckets=byChampion.get(champion).map(bucket),known=partCount.get(champion);
+    const buckets=byChampion.get(champion).map(j=>compact(bucket(j))),known=partCount.get(champion);
     if(known===1)return [[`champions/${champion}.json`,{schemaVersion:2,champion,buckets}]];
     if(known)return slices(champion,buckets,Math.ceil(buckets.length/known));
     const fits=v=>gzipSync(JSON.stringify(v)).length<=splitAbove;

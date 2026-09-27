@@ -10,9 +10,10 @@ sanitized portfolio snapshot for technical review; personal legal-notice details
 remain in the private deployment source.
 
 A causal item-recommendation model was researched from 2026-09-24 to 2026-09-27 and
-archived: at this data scale, item-versus-item effects on winning are too small to
-separate from noise and from who buys which item. The code, tests, docs and findings
-are in [archive/item-model](archive/item-model/README.md).
+ended: at this data scale, item-versus-item effects on winning are too small to
+separate from noise and from who buys which item. Its code was removed; the thesis,
+approach, hardships and reasons for stopping are in
+[docs/item-model-retrospective.md](docs/item-model-retrospective.md).
 
 ## What is implemented
 
@@ -31,7 +32,11 @@ are in [archive/item-model](archive/item-model/README.md).
 - Deduplicated match details and timelines; patch-matched item definitions.
 - Observed matchup win rates, early starting packages, purchased items, full rune
   pages and spell pairs. Wilson intervals and sample denominators are displayed.
-- A win-probability model (WPA) that predicts the winner from game state.
+- A win-probability model (WPA) that predicts the winner from game state, and per-item pp: how much
+  more often buyers won than their game state predicted. An item is marked a "possible edge" only with
+  1,000+ scored games and a result three standard errors from the slot average.
+- Route cards: most played, best adjusted win rate (shrunk toward the average), highest pp and best
+  of both.
 - Lane duels: gold lead in top and mid until the first gank, per matchup and per early choice.
 - First-blood and first-tower rates per champion, shown against the role average.
 - Tests with isolated synthetic fixtures; no synthetic match statistics are published.
@@ -193,8 +198,9 @@ npm run build
 `wpa.py` rebuilds the game state every 2 minutes from each stored timeline (gold,
 XP and level gaps, objectives, draft strength), trains cross-fitted gradient
 boosting with Platt recalibration, and scores purchases using models that did not
-train on those games. Per-item WPA did not reproduce across development splits, so
-the site marks it as unsupported rather than presenting it as an item advantage.
+train on those games. The ranking of every item in a slot does not reproduce across
+split halves, so the site shows each item's pp with its range and flags only items far
+beyond chance as a "possible edge", never as a proven item advantage.
 
 ## Lane 1v1 (prototype)
 
@@ -261,7 +267,7 @@ keys and research reports are excluded.
 
 Observed win rates are associations. Observational match data retains selection
 bias (who buys an item, against which team) that adjustment only partly removes;
-the archived item-model research found that bias as large as the item effects.
+the ended item-model research found that bias as large as the item effects.
 
 ## Source availability
 

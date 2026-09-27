@@ -70,11 +70,17 @@ test('API requires password even on direct invocation, rejects writes, traversal
   const res=await serveData(request(),s,'pw');assert.equal(res.status,200);assert.equal(res.headers.get('cache-control'),'private, no-store');
   for(const f of ['../settistics.sqlite','.env','champions/Sett.json/../../raw.json'])assert.equal((await serveData(request(`?version=${p.current.version}&file=${encodeURIComponent(f)}`),s,'pw')).status,503);
   const url=`?version=${p.current.version}&file=champions/Sett.json`;
-  const delivered=await serveData(request(url),s,'pw');assert.equal(delivered.status,200);
+  const checked=new Set(),delivered=await serveData(request(url),s,'pw',checked);assert.equal(delivered.status,200);
   assert.equal(delivered.headers.get('content-encoding'),'gzip');
-  assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(await delivered.arrayBuffer()))),fixture().get('champions/Sett.json'));
+  // Versioned files are immutable: the browser may cache them, and the stored gzip is served unchanged.
+  assert.equal(delivered.headers.get('cache-control'),'private, max-age=31536000, immutable');
+  const bytes=Buffer.from(await delivered.arrayBuffer());
+  assert.deepEqual(JSON.parse(gunzipSync(bytes)),fixture().get('champions/Sett.json'));
+  assert.ok(checked.has(`${p.current.version}/champions/Sett.json`));
+  assert.deepEqual(Buffer.from(await (await serveData(request(url),s,'pw',checked)).arrayBuffer()),bytes);
   s.data.get(`releases/${p.current.version}/champions/Sett.json`).body='{}';
-  assert.equal((await serveData(request(url),s,'pw')).status,503);
+  // An instance that has not checked the file yet still refuses a corrupted one.
+  assert.equal((await serveData(request(url),s,'pw',new Set())).status,503);
 });
 test('reader retains compatibility with an earlier uncompressed last-good release',async()=>{
   const s=new Store(),version='1790212345678-11111111-1111-1111-1111-111111111111',body=JSON.stringify(fixture().get('index.json'));
@@ -94,13 +100,13 @@ test('client pins a release; failed current falls back to previous, then bundled
   failed=true;await assert.rejects(client.get('champions/Sett.json'));assert.equal(reset,1);
   assert.equal((await client.get('index.json')).dataVersion,undefined);
 });
-test('refresh cannot publish after comparison, training, export or build fails',()=>{
-  for(let fail=0;fail<4;fail++){
+test('refresh cannot publish after training, export or build fails',()=>{
+  for(let fail=0;fail<3;fail++){
     const calls=[];
     assert.throws(()=>refresh((exe,args)=>{calls.push(args[0]);if(calls.length===fail+1)throw Error('stage failed');},'python','xgb-cuda'));
     assert.equal(calls.includes('scripts/publish-data.mjs'),false);
   }
   const calls=[];refresh((exe,args)=>calls.push(args),'python','auto');
-  assert.equal(calls.at(-1)[0],'scripts/publish-data.mjs');assert.deepEqual(calls[1],['pipeline/wpa.py','--backend','auto']);
+  assert.equal(calls.at(-1)[0],'scripts/publish-data.mjs');assert.deepEqual(calls[0],['pipeline/wpa.py','--backend','auto']);
   assert.equal(calls.some(c=>c.includes('deploy')),false);
 });

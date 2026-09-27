@@ -88,6 +88,13 @@
 .im-lane{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .im-lane b{display:block;font:600 20px var(--mono)}
 .im-lane small{display:block;font-size:11.5px;color:var(--muted);line-height:1.4}
+.im-lane.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.im-lane-sec{padding:20px 22px 18px;background:var(--raised)}
+.im-lane-sec h3{font-size:14px}
+.im-lane-sec .im-lane{gap:18px;margin-bottom:12px}
+.im-lane-sec .im-lane b{font-size:34px;line-height:1.1}
+.im-lane-sec .im-lane small{font-size:13px;margin-top:4px}
+.im-lane-sec .im-note{font-size:13px}
 .im-alts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .im-alt{display:grid;grid-template-columns:32px 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--raised);color:var(--ink);cursor:pointer;font:inherit}
 .im-alt:hover{border-color:var(--accent-line-strong)}
@@ -96,7 +103,7 @@
 .im-empty{padding:22px;color:var(--muted)}
 @media(max-width:600px){
   .build{padding:12px}.build-step{flex-basis:96px}.build-arrow{display:none}
-  .im-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.im-tiles>:last-child:nth-child(odd){grid-column:span 2}.im-lane{grid-template-columns:1fr}.im-alts{grid-template-columns:1fr}
+  .im-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.im-tiles>:last-child:nth-child(odd){grid-column:span 2}.im-lane,.im-lane.two{grid-template-columns:1fr}.im-alts{grid-template-columns:1fr}
   .im-head{padding:14px 16px}.im-sec{padding:14px 16px}.path-tabs{flex-wrap:wrap}.path-tabs button{flex:1 1 45%}
 }
 .build{align-items:flex-start}.build-step.part img{margin:14px 0 14px}
@@ -160,3 +167,26 @@
 @media(max-width:600px){.counter-row{grid-template-columns:16px 34px minmax(0,1fr) 92px;gap:9px;padding:10px 14px}.counter-row .game-icon.champion{width:34px;height:34px}.counter-lane{grid-column:3/-1;text-align:left;font-size:10px;margin-top:-4px}.counter-wr b{font-size:13px}.view-tabs{overflow-x:auto;scrollbar-width:none}.view-tabs button{white-space:nowrap}}
 .route-tabs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 24px 0}.route-label{font:10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}.route-options{display:flex;gap:6px;flex-wrap:wrap}.route-options button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;background:transparent;padding:5px 10px 5px 6px;color:var(--muted);text-align:left;font-size:11px}.route-options button .game-icon,.route-options button .icon-fallback{width:24px;height:24px;border-radius:3px;font-size:13px}.route-options button b{display:block;font-weight:600}.route-options button small{display:block;font:10px var(--mono);color:var(--faint)}.route-options button[aria-pressed=true]{color:var(--gold);border-color:var(--accent-line-strong);background:var(--accent-fill-strong)}.route-cohort{display:flex;flex-wrap:wrap;gap:4px 22px;margin:0 24px 12px;font-size:11px;color:var(--muted)}.route-cohort:empty{display:none}.route-cohort b{color:var(--ink);font-weight:600;margin-right:4px}.build-step .when.untimed{color:var(--faint)}
 @media(max-width:600px){.route-tabs{margin:12px 12px 0}.route-options{width:100%}.route-options button{flex:1 1 45%;min-width:0}.route-options button b{font-size:10px;overflow-wrap:anywhere}.route-cohort{margin:0 16px 12px;flex-direction:column;font-size:10px}}
+.im-pp-head{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.im-pp-head b{font:600 34px/1.1 var(--mono);color:var(--ink)}.im-pp-head b.pos{color:var(--green)}.im-pp-head b.neg{color:var(--neg)}
+.im-pp-head span{font-size:13px;color:var(--muted)}
+.im-pp .im-verdict{font-weight:400}.im-pp .im-verdict b{color:inherit}
+/* Route cards: one tone per kind. Win rate and pp get a slow sheen on their label; everything else stays still. */
+.path-tabs button{--tone:var(--muted);position:relative;overflow:hidden;background:linear-gradient(160deg,color-mix(in srgb,var(--tone) 7%,transparent),transparent 60%)}
+.path-tabs button::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--tone);opacity:.55}
+.path-tabs button .bt-tag{color:var(--tone)}
+.path-tabs .bt-played{--tone:var(--bone)}
+.path-tabs .bt-alt{--tone:var(--faint)}.path-tabs .bt-alt::before{opacity:.25}
+.path-tabs .bt-wr{--tone:var(--ember)}
+.path-tabs .bt-pp{--tone:#4fd1b8}
+.path-tabs .bt-both{--tone:#f2b53a}.path-tabs .bt-both::before{background:linear-gradient(90deg,var(--ember),#4fd1b8)}
+.path-tabs :is(.bt-wr,.bt-pp,.bt-both){box-shadow:inset 0 0 18px -8px color-mix(in srgb,var(--tone) 45%,transparent)}
+.path-tabs :is(.bt-wr,.bt-pp,.bt-both) .bt-tag{background:linear-gradient(100deg,var(--tone) 40%,#fff6e0 50%,var(--tone) 60%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:bt-sheen 6s ease-in-out infinite}
+.path-tabs .bt-both .bt-tag{background-image:linear-gradient(100deg,var(--ember) 35%,#fff6e0 50%,#4fd1b8 65%)}
+.path-tabs button[aria-pressed=true]{background:linear-gradient(160deg,color-mix(in srgb,var(--tone) 16%,transparent),color-mix(in srgb,var(--tone) 4%,transparent));border-color:color-mix(in srgb,var(--tone) 55%,var(--line));color:var(--ink)}
+.path-tabs button[aria-pressed=true]::before{opacity:1}
+.path-tabs button[aria-pressed=true] .bt-tag{color:var(--tone)}
+.path-tabs :is(.bt-wr,.bt-pp,.bt-both)[aria-pressed=true] .bt-tag{color:transparent}
+@keyframes bt-sheen{0%,60%{background-position:100% 0}100%{background-position:0 0}}
+@media(prefers-reduced-motion:reduce){.path-tabs .bt-tag{animation:none!important}}
+.path-tabs .bt-ppv{font-style:normal;white-space:nowrap}.path-tabs .bt-ppv.up{color:#4fd1b8}.path-tabs .bt-ppv.down{color:var(--neg)}

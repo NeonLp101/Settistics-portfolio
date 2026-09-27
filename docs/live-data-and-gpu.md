@@ -1,20 +1,17 @@
 # GPU experiments and aggregate refreshes
 
-The visitor chooses a pregame champion, role, matchup and patch. The displayed route
-stays fixed. Game state enters local training only. This change does not generate an
-Optimized path or claim a best route: the forward policy, overlap, uncertainty,
-state-stratum, placebo and sensitivity checks in [the plan](optimized-build-plan.md)
-remain outstanding. AUC measures outcome prediction, not item impact.
+The WPA model trains locally on the GPU; visitors only ever receive the resulting aggregates, published
+as a live-data release. AUC measures outcome prediction, not item impact.
 
 ## Local commands
 
 Install `.venv/Scripts/python.exe -m pip install -r requirements-gpu.txt` once on Windows.
 The npm Python launcher now prefers the project virtual environment; `PYTHON` overrides it.
 
-- `npm run train:compare`: private forward outcome benchmark in `data/research/gpu-comparison.json`.
 - `npm run train:gpu`: WPA training forced onto CUDA. `pipeline/wpa.py` defaults to `--backend auto`:
   the GPU when a real CUDA fit succeeds, otherwise the same XGBoost model on CPU.
-- `npm run data:refresh`: compare, train (auto), export, build, validate and publish in order.
+- `npm run data:refresh`: train (auto), export, build, validate and publish in order. It does not rerun
+  `pipeline/lane.py`.
 - `npm run data:refresh -- --cpu`: train with the older HistGB learner instead.
 - `npm run data:validate`: check the assembled public aggregates without uploading.
 - `npm run data:publish`: publish an already successful training/export/build output.
@@ -39,36 +36,24 @@ left the main database are removed from the cache on every read, and purge, forg
 anonymize delete the cache file. Tests compare the vectorized features with the reference
 `Game.state` and cached records with direct extraction.
 
-## Frozen model comparison
+## Model backend
 
-`pipeline/backends.py` uses XGBoost 3.2.0 histogram trees with `device=cuda:0`.
-After every fit it checks the trained booster configuration and fails if CUDA silently
-fell back to CPU. The XGBoost CPU comparison has the same hyperparameters and seed.
-The original histogram boosting, logistic and Extra Trees families are baselines.
+`pipeline/backends.py` uses XGBoost histogram trees with `device=cuda:0`. After every fit it checks the
+trained booster configuration and fails if CUDA silently fell back to CPU; `auto` falls back to the same
+model on CPU only when a real one-round CUDA fit fails. A forward benchmark on 2026-09-24 (three later
+time windows, identical rows and features) found boosted trees tied on held-out quality (AUC ~0.78) and
+the GPU fastest at the production size (~2.6 s per fold versus CPU time doubling as the window grew),
+while below ~100k rows GPU overhead exceeds the fit. So:
 
-The benchmark runs two populations: one state strictly before minute 10 for each participant
-in games lasting over 10 minutes, and every two-minute WPA training moment (the production
-workload, used for the hardware decision). It reads cached features without writing to the
-collectors' database. Every learner
-gets identical features, rows, time boundaries and a separate earlier calibration window.
-Three expanding windows evaluate the later 40–60%, 60–80% and 80–100% of distinct match
-start times. Their calibration windows are the immediately preceding 10%; fitting uses
-only times before that. Ties and all participants in a match stay together. Player IDs
-never enter features; player history is not encoded. Separate cold-player metrics audit
-participants absent from both fitting and calibration windows. Repeated players in the
-main temporal evaluation do not imply cold-player or causal generalization.
+| Stage | Hardware |
+|---|---|
+| JSON parse, game-state reconstruction, export records | all CPU cores but two, cached per match |
+| WPA outcome model (cross-fitted folds, ~25M snapshots) | GPU (`--backend auto`) |
+| Platt calibration, metrics, split-half and placebo gates | CPU, numpy |
+| Lane model | CPU |
 
-Parameters are fixed before evaluation. The private report includes split fingerprint,
-counts, cutoffs, patch/region coverage, AUC, Brier, log loss, calibration and wall times.
-Do not compare its minute-10 AUC directly with the all-moment production WPA AUC.
-CPU/CUDA timing includes fitting, calibration and prediction, excluding shared extraction.
-A single run is not a general speed guarantee; GPU transfer cost can outweigh fitting time.
-
-Results and the per-stage hardware choice are in [the benchmark](gpu-benchmark-2026-09-24.md).
-The full WPA backend retains the existing five match-hash folds, separate base-model
-and calibration training, pre-purchase features and unchanged split-half display gates.
-The optional GPU changes the learner, not the interpretation of residuals. Post-purchase
-curves describe subsequent game evolution and do not enter pre-purchase features.
+The benchmark script was removed after the decision; the WPA backend keeps its match-hash folds,
+separate calibration and pre-purchase features.
 
 ## Publication protocol and fallback
 
@@ -92,7 +77,9 @@ player/match IDs and credentials are not accepted artifacts.
 Partial uploads are unreachable through the active pointer. Old versions are retained;
 there is no automatic deletion. The browser fetches the pointer once per page session,
 pins that version, then downloads champion files on demand. Every live file is hash-
-checked and schema-validated by the function before serving. If the live index fails,
+checked and schema-validated by the function the first time a warm instance serves it; release keys
+are create-only, so later requests on that instance send the stored gzip bytes unchanged (no
+recompression). If the live index fails,
 the browser tries the previous release, then the deployed aggregate export. If a pinned
 champion file fails, the page resets its data and caches before trying that fallback,
 so it does not mix new champion buckets with old metadata. Reload the page to discover
@@ -100,7 +87,8 @@ a newer release. An already open page does not replan a route during a match.
 
 `/api/live-data` is read-only. The existing wildcard password edge gate stays enabled;
 the function independently checks `SITE_PASSWORD`, including direct function URLs.
-Responses use `private, no-store`. With a missing password the function fails closed.
+The pointer uses `private, no-store`; versioned release files use `private, max-age=31536000,
+immutable`, so a browser downloads each champion file once per release. With a missing password the function fails closed.
 The bundled export remains available behind the same password gate during store outages.
 
 References: [XGBoost GPU support](https://xgboost.readthedocs.io/en/stable/gpu/),

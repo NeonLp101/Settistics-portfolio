@@ -44,13 +44,17 @@ export async function publishRelease(store,files){
   return pointer;
 }
 
-export async function readReleaseFile(store,version,name){
+// Returns the checked body and, for gzip releases, the stored bytes so they can be served without recompressing.
+// trusted: this instance already checked the same immutable file, so gzip bytes are returned unchecked.
+export async function readReleaseEntry(store,version,name,trusted=false){
   if(!versionPattern.test(version)||!filePattern.test(name))throw new Error('Invalid data path');
   const manifest=validateManifest(await store.get(`releases/${version}/manifest.json`,{type:'json'}));
   if(manifest.version!==version||!manifest.files[name])throw new Error('File outside release');
-  const key=`releases/${version}/${name}`;
-  const stored=await store.get(key,{type:manifest.encoding==='gzip'?'arrayBuffer':'text'});
-  const body=stored===null?null:manifest.encoding==='gzip'?gunzipSync(Buffer.from(stored)).toString('utf8'):stored;
+  const key=`releases/${version}/${name}`,gzip=manifest.encoding==='gzip';
+  const stored=await store.get(key,{type:gzip?'arrayBuffer':'text'});
+  if(trusted&&gzip&&stored!==null)return {body:null,gzipped:Buffer.from(stored)};
+  const body=stored===null?null:gzip?gunzipSync(Buffer.from(stored)).toString('utf8'):stored;
   if(body===null||hash(body)!==manifest.files[name])throw new Error('Release integrity check failed');
-  return body;
+  return {body,gzipped:gzip?Buffer.from(stored):null};
 }
+export async function readReleaseFile(store,version,name){return (await readReleaseEntry(store,version,name)).body;}

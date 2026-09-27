@@ -111,17 +111,18 @@ test('sparse matchup timing is labeled as the general champion sample and shows 
  const html=run(`guideTimeline([{kind:'slot1',id:'6631',label:'Stridebreaker',minute:12}],[],true)`);
  assert.match(html,/General champion sample/);assert.doesNotMatch(html,/enemy/);
 });
-test('imported or unsupported data never receives adjusted estimates',()=>{
+test('imported data never receives pp; local pp is marked a possible edge only when clearly beyond chance',()=>{
  run(`stats.wpaModel={games:1000};guideState.slot='slot1'`);
- const summary=`merged([{games:30,wins:20,choices:[{kind:'slot1',id:'6631',label:'Stridebreaker',games:30,wins:20,residN:30,residSum:3,residSq:5}]}])`;
- assert.doesNotMatch(run(`guideComparison(${summary},false)`),/ pp/);
- // Even local model data stays hidden until the slot's estimates reproduce between halves of the data.
- run(`stats.reliability={wpa:{slot1:{pass:false,splitHalfR:0.02,neededGames:2400}}}`);
- assert.doesNotMatch(run(`guideComparison(${summary},true)`),/ pp/);
- assert.match(run(`guideComparison(${summary},true)`),/not reproducible yet/);
- run(`stats.reliability={wpa:{slot1:{pass:true,splitHalfR:0.6}}}`);
- assert.match(run(`guideComparison(${summary},true)`),/ pp/);
- run(`delete stats.reliability`);
+ const choice=(id,n,sum,sq)=>`{kind:'slot1',id:'${id}',label:'${id}',games:${n},wins:${n/2},residN:${n},residSum:${sum},residSq:${sq}}`;
+ const summary=(...c)=>`merged([{games:9000,wins:4500,choices:[${c.join(',')}]}])`;
+ assert.doesNotMatch(run(`guideComparison(${summary(choice('a',30,3,5))},false)`),/ pp/);
+ // Small samples show the number but no verdict.
+ assert.match(run(`guideComparison(${summary(choice('a',30,3,5))},true)`),/too few games to tell/);
+ // 2,000 games 5 pp above the slot average (SD 0.45): about 5 standard errors, a possible edge.
+ const edge=run(`guideComparison(${summary(choice('a',2000,100,405),choice('b',6000,0,1215))},true)`);
+ assert.match(edge,/possible edge/);assert.match(edge,/\+3\.8/);
+ // The same gap with a much noisier outcome stays within noise.
+ assert.match(run(`guideComparison(${summary(choice('a',2000,100,20000),choice('b',6000,0,60000))},true)`),/within noise/);
 });
 test('real labels are escaped and timing rounds across minute boundaries',()=>{
  assert.equal(run('guideTime(12.999)'), '13:00');
@@ -188,4 +189,16 @@ test('split champion data is fetched part by part and merged',async()=>{
  assert.deepEqual(json(`${JSON.stringify(await run(`championBuckets('Sylas')`))}`),[{id:1},{id:2},{id:3}]);
  assert.deepEqual(json(`${JSON.stringify(await run(`championBuckets('Garen')`))}`),[{id:'whole'}]);
  assert.deepEqual(json('fetched'),['data/champions/Sylas.json','data/champions/Sylas.2.json','data/champions/Sylas.3.json','data/champions/Garen.json']);
+});
+test('highest pp build sums shrunk per-purchase pp, comparing later items within the same first item',()=>{
+ run(`stats.wpaModel={games:1000}`);
+ const r=(kind,id,n,sum)=>`{kind:'${kind}',id:'${id}',label:'${id}',games:${n},wins:${n/2},residN:${n},residSum:${sum},residSq:${n}}`;
+ // Same first item; after it, B beats C by 10 pp over 1,000 games each. A big raw gap on 20 games (D) must not win.
+ const result=json(`(()=>{const buckets=[{games:2020,wins:1010,choices:[${r('slot1','A',2020,0)}],
+   paths:[{id:'A:0',firstItem:'A',bootsBefore:0,games:2020,wins:1010,choices:[${r('slot1','A',2020,0)},${r('slot2','B',1000,50)},${r('slot2','C',1000,-50)},${r('slot2','D',20,10)}]}]}];
+  const summary=merged(buckets),paths=guidePaths(buckets);
+  const builds=[{id:'A>B>E',items:['A','B','E'],games:500,wins:250},{id:'A>C>E',items:['A','C','E'],games:900,wins:450},{id:'A>D>E',items:['A','D','E'],games:20,wins:10}];
+  const best=guideBuildPp(builds,summary,paths);return{best:best.id,pp:builds.map(w=>+w.pp.toFixed(2))};})()`);
+ assert.equal(result.best,'A>B>E');
+ assert.ok(result.pp[0]>2&&result.pp[1]<-2&&Math.abs(result.pp[2])<1,JSON.stringify(result.pp));
 });

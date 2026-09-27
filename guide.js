@@ -135,6 +135,17 @@ function guideRankBuilds(builds){
   const top=eligible[0],best=top&&popular&&top!==popular&&popular.games>=BUILD_MIN&&top.adjusted-popular.adjusted<BUILD_EDGE?popular:top||popular;
   return{eligible,popular,best,base};
 }
+// A build's pp: the sum of its three purchases' pp, each against the other choices at that step. The 2nd and 3rd items
+// are compared only with games that opened with the same first item. Each step is pulled toward zero as if it also had
+// 1,000 average games, so a lucky small sample cannot top the list. Uses the per-purchase residuals already exported.
+const PP_PRIOR=1000,PP_BUILD_MIN=100;
+function guideBuildPp(builds,summary,paths){
+  if(!stats.wpaModel)return null;
+  const step=(sum,kind,id)=>{const {rows,ref}=rowsOf(sum,kind),c=rows.find(r=>r.id===id);return c?.residN?(c.residSum/c.residN-ref)*100*c.residN/(c.residN+PP_PRIOR):0;};
+  const after=new Map(),within=first=>{if(!after.has(first))after.set(first,merged(paths.filter(p=>p.firstItem===first).map(p=>({...p,choices:[...p.choices.values()]}))));return after.get(first);};
+  for(const w of builds){const [a,b,c]=w.items;w.pp=step(summary,'slot1',a)+step(within(a),'slot2',b)+step(within(a),'slot3',c);}
+  return builds.filter(w=>w.games>=PP_BUILD_MIN).sort((x,y)=>y.pp-x.pp||y.games-x.games)[0]||null;
+}
 function guideBuildName(w){return w.names.join(' › ');}
 function guideBase(){const previous=state.opponent;try{state.opponent='All matchups';return selection();}finally{state.opponent=previous;}}
 function guideItemName(id){return guideAssets.itemNames?.[id]||`Item ${id}`;}
@@ -145,7 +156,7 @@ function guideComparisonSample(paths,path,summary){
   if(guideState.slot!=='slot1'||!path)return summary;
   return merged(paths.filter(p=>p.bootsBefore===path.bootsBefore).map(p=>({...p,choices:[...p.choices.values()]})));
 }
-// Per-item adjusted associations appear only after the split-half stability check.
+// Pooled (role-wide) pp still uses the split-half stability check.
 function guideGate(metric,kind){return stats.reliability?.[metric]?.[kind]||null;}
 function guidePassed(metric,kind){return !!guideGate(metric,kind)?.pass;}
 function guidePooled(metric,kind,id){
@@ -153,10 +164,17 @@ function guidePooled(metric,kind,id){
   const [n,s1,s2]=t,m=s1/n,v=Math.max(0,s2/n-m*m),k=metric==='wpa'?100:1;
   return{m:m*k,h:1.96*Math.sqrt(v/n)*k,n};
 }
+// Per-item pp vs the model's pre-purchase win chance. The slot-wide ranking fails the split-half check, so a single item
+// is flagged only when its own estimate is at least 3 standard errors from the slot average over 1,000+ scored games
+// (24 such items across the data versus about 3 expected by chance). A possible edge, never proof the item causes it.
+const SIGNAL_N=1000,SIGNAL_Z=3;
 function guideModelScore(c,ref){
-  if(!stats.wpaModel||!guidePassed('wpa',c.kind))return null;
-  return wpaOf(c,ref);
+  if(!stats.wpaModel)return null;
+  const w=wpaOf(c,ref);if(!w)return null;
+  const z=w.h?w.m/(w.h/1.96):0;
+  return{...w,signal:w.n>=SIGNAL_N&&z>=SIGNAL_Z?'edge':w.n>=SIGNAL_N&&z<=-SIGNAL_Z?'weaker':null};
 }
+const signalLabel=s=>s.signal==='edge'?'possible edge':s.signal==='weaker'?'possibly weaker':s.n<SIGNAL_N?'too few games to tell':'within noise';
 function guideRowIcon(c){
   if(!c)return '<span class="icon-fallback" aria-hidden="true">◇</span>';
   if(c.kind==='keystone')return guideArt('rune',c.id);
@@ -231,7 +249,7 @@ function guideOpponent(sourceId){
   if(!championCache.has(id)){
     const generation=dataGeneration;
     championCache.set(id,null);
-    championBuckets(id).then(b=>{if(generation!==dataGeneration)return;championCache.set(id,b);renderSafely();}).catch(()=>{if(generation!==dataGeneration)return;championCache.set(id,[]);renderSafely();});
+    championBuckets(id).then(b=>{if(generation!==dataGeneration)return;championCache.set(id,b);renderSafely();}).catch(()=>{if(generation!==dataGeneration)return;championCache.set(id,[]);failedLoads.add(id);renderSafely();});
   }
   const buckets=championCache.get(id);
   if(buckets===null)return {summary:null,paths:[],builds:[],loading:true};
@@ -261,10 +279,10 @@ function guideComparison(summary,allowed,shownId){
   const {rows,total,ref}=rowsOf(summary,guideState.slot);
   if(!rows.length)return '<p class="empty-copy">No purchases recorded for this slot.</p>';
   return rows.slice(0,5).map((c,i)=>{
-    const score=allowed?guideModelScore(c,ref):null,positive=score&&score.m-score.h>0,negative=score&&score.m+score.h<0;
-    const clamp=v=>Math.max(0,Math.min(100,50+v*4));
+    const score=allowed?guideModelScore(c,ref):null,positive=score?.signal==='edge',negative=score?.signal==='weaker';
+    const clamp=v=>Math.max(0,Math.min(100,50+v*5));
     const bar=score?`<div class="scale" aria-hidden="true"><i style="left:${clamp(Math.min(0,score.m))}%;width:${Math.abs(clamp(score.m)-50)}%;background:${positive?'var(--green)':negative?'var(--neg)':'var(--faint)'}"></i><i class="ci" style="left:${clamp(score.m-score.h)}%;width:${clamp(score.m+score.h)-clamp(score.m-score.h)}%"></i></div>`:'';
-    return `<button type="button" class="choice${c.id===shownId?' selected':''}" data-item-kind="${guideState.slot}" data-item-id="${esc(c.id)}"><div class="choice-title">${guideArt('item',c.id)}<div><b>${esc(c.label)}</b><small>${pct(c.games,total)} · ${c.games} buys · ${pct(c.wins,c.games)} WR</small></div></div><div class="score ${positive?'good':'muted'}"><span>${score?fmtPp(score.m):'—'}</span><small>${score?`adjusted association · ±${score.h.toFixed(1)} · ${score.n} scored`:guidePassed('wpa',guideState.slot)?'not enough scored games':guideGate('wpa',guideState.slot)?'adjusted result: not reproducible yet':'adjusted result: unavailable'}</small></div>${bar}</button>`;
+    return `<button type="button" class="choice${c.id===shownId?' selected':''}" data-item-kind="${guideState.slot}" data-item-id="${esc(c.id)}"><div class="choice-title">${guideArt('item',c.id)}<div><b>${esc(c.label)}</b><small>${pct(c.games,total)} · ${c.games} buys · ${pct(c.wins,c.games)} WR</small></div></div><div class="score ${positive?'good':'muted'}"><span>${score?fmtPp(score.m):'—'}</span><small>${score?`${signalLabel(score)} · ±${score.h.toFixed(1)} · ${score.n.toLocaleString()} scored`:!allowed&&state.opponent!=='All matchups'?'pp hidden: too few games in this matchup':'not enough scored games'}</small></div>${bar}</button>`;
   }).join('');
 }
 // ---- Win chance after buying: minute by minute, relative to the average choice in the same slot ----
@@ -323,44 +341,39 @@ function guideItemDetail(kind,id){
   const head=`<header class="im-head">${guideArt('item',id,name)}<div><div class="eyebrow">${esc(slot)} · ${esc(ctx.you)} into ${esc(ctx.them)}</div><h2 id="item-modal-title">${esc(name)}</h2></div><button type="button" class="im-close" data-close-modal aria-label="Close">×</button></header>`;
   if(!c)return head+`<p class="im-empty">No purchases of ${esc(name)} as ${esc(slot.toLowerCase())} in this selection.</p>`;
   const slotGames=rows.reduce((a,r)=>a+r.games,0),slotWins=rows.reduce((a,r)=>a+r.wins,0),ci=wilson(c.wins,c.games);
-  const w=ctx.allowed?guideModelScore(c,ref):null,m=stats.wpaModel,gate=guideGate('wpa',kind),poolGate=guideGate('wpaPooled',kind),pool=guidePooled('wpa',kind,id);
+  const w=ctx.allowed?guideModelScore(c,ref):null,poolGate=guideGate('wpaPooled',kind),pool=guidePooled('wpa',kind,id);
   const tile=(label,value,sub)=>`<div class="im-tile"><div class="eyebrow">${label}</div><b>${value}</b><small>${sub}</small></div>`;
   // The model's win chance just before buying: says whether an item is bought when ahead or behind. Descriptive, not a ranking.
   const pre=guidePreChance(rows,c),state=pre&&(pre.mine-pre.slot>=.02?'usually bought when ahead':pre.mine-pre.slot<=-.02?'usually bought when behind':'bought at a typical game state');
   const tiles=tile('Bought',pct(c.games,total),`${c.games} of ${total} games in this slot`)+
     tile('Win rate',pct(c.wins,c.games),`${ci?`likely ${ci[0].toFixed(0)}–${ci[1].toFixed(0)}% · `:''}slot average ${pct(slotWins,slotGames)}`)+
     (kind==='component'?'':tile('Win chance when bought',pre?pct(pre.mine,1):'—',pre?`${state} · slot average ${pct(pre.slot,1)}`:`needs ${GUIDE_MIN} scored games`))+
-    tile(kind==='component'?'Bought at':'Finished at',c.timeCount?guideTime(c.timeSum/c.timeCount):'—',c.timeCount?`average of ${c.timeCount} buyers`:'no timing recorded')+
-    (kind==='component'?'':tile('Adjusted result',w?fmtPp(w.m):gate&&!gate.pass?'Not reproducible':'Not enough data',w?`±${w.h.toFixed(1)} pp · ${w.n} scored games`:gate&&!gate.pass?`split-half r = ${gate.splitHalfR.toFixed(2)}; needs 0.40`:`${(c.residN||0).toLocaleString()} scored games`));
-  // The graph: bar from zero to the estimate, thin line for the 95% range, same scale as the comparison panel.
-  const X=v=>Math.max(0,Math.min(100,50+v*5)),cls=w?(w.m-w.h>0?'pos':w.m+w.h<0?'neg':'flat'):'flat';
+    tile(kind==='component'?'Bought at':'Finished at',c.timeCount?guideTime(c.timeSum/c.timeCount):'—',c.timeCount?`average of ${c.timeCount} buyers`:'no timing recorded');
+  // Whole-game pp: buyers' actual wins against the model's win chance just before buying, relative to the slot average.
+  const role=esc(($('#role').selectedOptions?.[0]?.textContent||'').toLowerCase()),m=stats.wpaModel;
+  const X=v=>Math.max(0,Math.min(100,50+v*5)),cls=w?.signal==='edge'?'pos':w?.signal==='weaker'?'neg':'flat';
   const graph=w?`<div class="im-graph ${cls}" aria-hidden="true"><div class="im-track"><i class="bar" style="left:${X(Math.min(0,w.m))}%;width:${Math.abs(X(w.m)-50)}%"></i><i class="ci" style="left:${X(w.m-w.h)}%;width:${X(w.m+w.h)-X(w.m-w.h)}%"></i></div><div class="im-axis"><span>−10 pp</span><span>average choice</span><span>+10 pp</span></div></div>`:'';
-  const verdict=!w?'':cls==='pos'?`Buyers won more often than this model predicted.`:cls==='neg'?`Buyers won less often than this model predicted.`:`The range crosses zero: this model cannot distinguish these buyers from the slot average.`;
-  // Components are not scored by the model; say so instead of showing an empty graph.
-  const have=c.residN||0,need=gate?.neededGames||0;
-  const pooledLine=pool&&poolGate?.pass?`<p class="im-pooled"><b>${fmtPp(pool.m)}</b> ±${pool.h.toFixed(1)} pp across all ${esc(($('#role').selectedOptions?.[0]?.textContent||'').toLowerCase())} players who buy ${esc(name)} as ${esc(slot.toLowerCase())} (${pool.n.toLocaleString()} games). This pooled estimate passes our reproducibility check.</p>`
-    :pool?`<p class="im-note">Pooled across all players in this role: ${pool.n.toLocaleString()} games, also not reproducible yet.</p>`:'';
-  const missing=kind==='component'?'Adjusted results are scored for finished items and boots. Components have no score of their own.'
-    :!gate?'No scored purchases in this slot yet.'
-    :gate.pass?`<p>This item has ${have.toLocaleString()} scored games, too few for an individual estimate.</p>`
-    :`<p><b>Not reproducible yet.</b> This item has ${have.toLocaleString()} scored games. The item rankings for ${esc(slot.toLowerCase())}s disagree between two halves of the data (r = ${gate.splitHalfR.toFixed(2)}; needs 0.40).</p><p class="im-note">${need?`About ${need.toLocaleString()} games per item would give ±2 pp precision, but more games alone may not make the rankings agree. `:''}With item labels shuffled, ${(gate.placebo*100).toFixed(1)}% of items still looked significant, versus ${(gate.flagged*100).toFixed(1)}% for real. Showing an adjusted score now would be misleading.</p>${pooledLine}`;
-  const meaning=w?`<b>${fmtPp(w.m)}</b> means buyers of ${esc(name)} here won ${Math.abs(w.m).toFixed(1)} percentage points ${w.m<0?'less':'more'} often than the game state predicted, compared with the average ${esc(slot.toLowerCase())}.`:'For example, <b>+2 pp</b> would mean buyers won 2 percentage points more often than the game state predicted, compared with the average choice in the same slot.';
-  const impact=kind==='component'?`<section class="im-sec"><h3>Adjusted whole-game result</h3><p class="im-note">Components are not scored. The adjusted result and the win chance when bought apply once an item is finished: open the finished item to see them.</p></section>`:`<section class="im-sec"><h3>Adjusted whole-game result</h3>${w?graph:`<div class="im-measure">${missing.startsWith('<')?missing:`<p>${missing}</p>`}</div>`}${verdict?`<p class="im-verdict ${cls}">${verdict}</p>`:''}
-    <details ${w?'open':''}><summary>How the pp is calculated</summary><p>Just before every purchase, our model estimates the buyer's chance to win from recorded gold and level leads, objectives, side and other available pre-purchase context. We then compare how often buyers actually won with that estimate. ${meaning} This adjusts for measured game state, but players also choose items for reasons the model cannot see. It does not identify the item's causal impact.</p></details>
-    <details><summary>How to read the graph</summary><p>The bar starts at zero, the average choice for this slot. The thin line is an approximate 95% interval for this adjusted association, assuming these games are independent. A line above or below zero is evidence of a difference among buyers, not proof the item helps or hurts. Wide lines mean few games.</p></details>
-    ${m?`<p class="im-note">Model: ${Number(m.games).toLocaleString()} games, accuracy (AUC) ${m.auc.toFixed(2)}, predictions within ${m.calibrationErrorPp.toFixed(1)} pp of what happened.</p>`:''}</section>`;
+  const verdict=!w?'':w.signal==='edge'?`<b>Possible edge.</b> ${esc(ctx.you)} players who buy ${esc(name)} win ${w.m.toFixed(1)} pp more often than their game state predicted, well beyond chance over ${w.n.toLocaleString()} games. Worth trying.`
+    :w.signal==='weaker'?`<b>Possibly weaker.</b> Buyers win ${Math.abs(w.m).toFixed(1)} pp less often than their game state predicted, well beyond chance over ${w.n.toLocaleString()} games.`
+    :w.n<SIGNAL_N?`Too few games to call: an edge needs ${SIGNAL_N.toLocaleString()} scored games and a result clearly away from zero.`
+    :`Within noise: this result is not clearly different from the average ${esc(slot.toLowerCase())}.`;
+  const pooledLine=pool&&poolGate?.pass?`<p class="im-pooled"><b>${fmtPp(pool.m)}</b> ±${pool.h.toFixed(1)} pp across all ${role} players who buy ${esc(name)} as ${esc(slot.toLowerCase())} (${pool.n.toLocaleString()} games).</p>`:'';
+  const pp=kind==='component'?'':`<section class="im-sec im-pp"><h3>Possible recommendation</h3>${w?`<div class="im-pp-head"><b class="${cls}">${fmtPp(w.m)}</b><span>±${w.h.toFixed(1)} pp · ${w.n.toLocaleString()} scored games</span></div>${graph}<p class="im-verdict ${cls}">${verdict}</p>`:`<p>${!ctx.allowed&&state.opponent!=='All matchups'?`pp hidden: too few games against ${esc(champion(state.opponent).name)}, so the general ${esc(ctx.you)} sample is shown without pp.`:'Not enough scored games for a pp result yet.'}</p>`}${pooledLine}
+    <details><summary>How the pp is calculated</summary><p>Just before every purchase, our model (${m?`${Number(m.games).toLocaleString()} games, AUC ${m.auc.toFixed(2)}`:'win-probability model'}) estimates the buyer's chance to win from gold and level leads, objectives and side. The pp is how much more or less often buyers actually won than that, compared with the average choice in this slot. The thin line is a 95% range. An item is marked as a possible edge only with ${SIGNAL_N.toLocaleString()}+ games and a result at least three standard errors from zero: across all champions, several times more items reach that than chance alone would produce. It still is not proof: who buys an item, and why, can differ in ways the model cannot see.</p></details></section>`;
   // 1v1 lane: only items bought while laning are measured.
   let lane;
-  if(c.laneN){const l=laneOf(c,guideLaneRef(ctx.summary,kind)),up=c.laneUp||0;
-    lane=`<section class="im-sec"><h3>In the 1v1 lane</h3><div class="im-lane"><div><b>${pct(up,c.laneN)}</b><small>of ${c.laneN} clean lanes: buyer's gold lead grew</small></div><div><b>${gold(c.laneDelta/c.laneN)}</b><small>gold vs the lane opponent, 5 min after buying</small></div><div><b>${l?gold(l.m):guideGate('lane',kind)&&!guidePassed('lane',kind)?'Not reproducible':'Not enough data'}</b><small>${l?`vs the average choice · ±${Math.round(l.h)}`:guidePassed('lane',kind)?`needs ${LANE_MIN} clean lanes`:'vs the average choice: split-half check failed'}</small></div></div>
-      <p class="im-note">Counted only while the lane stays a true 1v1, until the first gank or another champion keeps showing up.</p></section>`;}
+  if(c.laneN){const l=laneOf(c,guideLaneRef(ctx.summary,kind)),up=c.laneUp||0,lg=guideGate('lane',kind);
+    const vsAvg=l?`<div><b>${gold(l.m)}</b><small>vs the average choice · ±${Math.round(l.h)}</small></div>`:'';
+    const why=l?'':lg&&!lg.pass?` Compared with the average ${esc(slot.toLowerCase())} it is not reproducible yet (split-half r = ${lg.splitHalfR.toFixed(2)}; needs 0.40).`:lg?` A comparison with the average choice needs ${LANE_MIN} clean lanes.`:'';
+    lane=`<section class="im-sec im-lane-sec"><h3>In the 1v1 lane</h3><div class="im-lane${l?'':' two'}"><div><b>${pct(up,c.laneN)}</b><small>of ${c.laneN.toLocaleString()} clean lanes: buyer's gold lead grew</small></div><div><b>${gold(c.laneDelta/c.laneN)}</b><small>gold vs the lane opponent, 5 min after buying</small></div>${vsAvg}</div>
+      <p class="im-note">Counted only while the lane stays a true 1v1, until the first gank or another champion keeps showing up.${why}</p></section>`;}
   else lane=`<section class="im-sec"><h3>In the 1v1 lane</h3><p class="im-note">${['slot1','boots'].includes(kind)?'No clean 1v1 lanes recorded for this purchase yet.':'Lane result is measured for the first item and boots only, because later items are bought after laning ends.'}</p></section>`;
   // Same item across all matchups, when a specific opponent is selected.
   let across='';
   if(ctx.base){const b=rowsOf(ctx.base,kind),o=b.rows.find(r=>r.id===id);
     if(o)across=`<section class="im-sec"><h3>Against ${esc(ctx.them)} vs all matchups</h3><div class="im-lane"><div><b>${pct(c.games,total)}</b><small>bought here</small></div><div><b>${pct(o.games,b.total)}</b><small>bought across all matchups</small></div><div><b>${pct(o.wins,o.games)}</b><small>win rate across all matchups</small></div></div></section>`;}
   const alts=rows.filter(r=>r.id!==id).slice(0,4).map(r=>{const s2=ctx.allowed?guideModelScore(r,ref):null;return`<button type="button" class="im-alt" data-item-kind="${kind}" data-item-id="${esc(r.id)}">${guideArt('item',r.id)}<span>${esc(r.label)}</span><small>${pct(r.games,total)} · ${pct(r.wins,r.games)} WR${s2?` · ${fmtPp(s2.m)}`:''}</small></button>`;}).join('');
-  return head+`<div class="im-tiles" style="--tiles:${kind==='component'?3:5}">${tiles}</div>`+guideCurveSection(rows,c,kind,name,slot)+impact+lane+across+(alts?`<section class="im-sec"><h3>Other ${esc(slot.toLowerCase())} choices</h3><div class="im-alts">${alts}</div></section>`:'');
+  return head+`<div class="im-tiles" style="--tiles:${kind==='component'?3:4}">${tiles}</div>`+pp+lane+guideCurveSection(rows,c,kind,name,slot)+across+(alts?`<section class="im-sec"><h3>Other ${esc(slot.toLowerCase())} choices</h3><div class="im-alts">${alts}</div></section>`:'');
 }
 // ---- Counters: the selected champion's win rate against each lane opponent, relative to its usual win rate ----
 // Small samples are pulled toward the usual win rate before ranking, so a lucky 8-game streak cannot top the list.
@@ -407,7 +420,7 @@ function renderGuide(){
   const thin=state.opponent!=='All matchups'&&sel.games<GUIDE_MIN&&base.games>0;
   const active=thin?baseSelection:chosen,summary=thin?base:sel,paths=guidePaths(active.buckets);
   const builds=guideBuilds(active.buckets),rank=guideRankBuilds(builds);
-  if(!builds.some(w=>w.id===guideState.build))guideState.build=rank.popular?.id||null;
+  if(!builds.some(w=>w.id===guideState.build)){guideState.build=rank.popular?.id||null;guideState.route=null;}
   const build=builds.find(w=>w.id===guideState.build)||null,planned=guideBuildPlan(build,guideState.route),plan=planned.steps,timing=planned.timing;
   const path=null,buildSummary=summary,steps=guideBuildSteps(summary,null);
   const opposite=guideOpponent(chosen.source?.id||active.source?.id||'riot-match-v5');
@@ -424,13 +437,16 @@ function renderGuide(){
   const laneStat=lane&&lane.n>=15?`<div class="lane-stat"><div class="big-number">${gold(lane.gold)}</div><small>gold lead in lane, until the first gank
     <details class="info"><summary aria-label="How lane gold is measured">i</summary><p>Measured only while the lane is a true 1v1: from minute 1 until the first gank kill or assist, or until another champion keeps showing up. ${lane.n} lanes stayed clean long enough to count. Games where the jungler arrived early only count up to that point.</p></details></small></div>`:'';
   g('guide-metrics').innerHTML=`<div><div class="big-number">${pct(sel.wins,sel.games)}</div><small>observed win rate${ci?` · ${ci[0].toFixed(0)}–${ci[1].toFixed(0)}% interval`:''}</small><div class="delta">${delta!=null?`${fmtPp(delta)} vs usual`:sel.games?trust(sel.games):'No matching observations'}</div></div>${laneStat}<div><div class="big-number">${sel.games.toLocaleString()}</div><small>games in this selection</small></div>`;
-  g('data-status').textContent=loadError||`${Number(stats.uniqueMatches||0).toLocaleString()} collected matches`;
+  g('data-status').textContent=loadError||(stats.uniqueMatches?`${Number(stats.uniqueMatches).toLocaleString()} collected matches`:'Loading…');
+  const loading=!loadError&&!Array.isArray(championCache.get(state.champion)),collected=coverage().has(state.champion);
   renderChips();
   const notices=[];
   if(loadError)notices.push(`${esc(loadError)} <button type="button" data-reload>Retry data</button>`);
   else if(guideLoadErrors.has(state.champion))notices.push(`${esc(guideLoadErrors.get(state.champion))} <button type="button" data-reload>Retry data</button>`);
   else if(stats.status==='loading')notices.push('Loading collected statistics…');
-  else if(thin)notices.push(`<strong>${sel.games} games against ${esc(them)}.</strong> Showing ${esc(you)}’s general setup and routes from ${base.games} games. Matchup timing and adjusted comparisons need more evidence.`);
+  else if(loading)notices.push(`Loading ${esc(you)}’s games…`);
+  else if(!collected&&stats.status!=='unavailable')notices.push(`No games collected for ${esc(you)} yet. Pick another champion; the list starts with the most collected ones.`);
+  else if(thin)notices.push(`<strong>${sel.games} games against ${esc(them)}.</strong> Showing ${esc(you)}’s general setup and routes from ${base.games} games. Matchup timing and pp comparisons need more evidence.`);
   else if(!sel.games)notices.push(`No collected matches for these filters. Try another matchup or region. <button type="button" data-reset>Show all matchups and regions</button>`);
   else if(sel.games<GUIDE_MIN)notices.push(`${sel.games} games in this selection. Treat these common choices as an early sample.`);
   if(stats.itemDataMissing?.length)notices.push(`Item data is unavailable for patch ${stats.itemDataMissing.map(patchLabel).map(esc).join(', ')}. Runes and spells remain available.`);
@@ -452,9 +468,16 @@ function renderGuide(){
   const buildCi=build?wilson(build.wins,build.games):null;
   g('build-eyebrow').textContent=!build?'Builds':build===rank.popular?'Suggested route · prototype':'Selected observed build';
   g('path-badge').textContent=build?`${pct(build.wins,build.games)} win rate · ${build.games} games`:`${summary.eligible.build} eligible builds`;
-  const pick=[rank.popular,...rank.eligible.filter(w=>w!==rank.popular)].filter(Boolean).slice(0,4);
+  const ppBest=allowed?guideBuildPp(builds,summary,paths):null;
+  // Best of both: the average of a build's shrunk win-rate edge and its pp, shown only when both are positive.
+  const both=ppBest?rank.eligible.filter(w=>w.games>=PP_BUILD_MIN).map(w=>({w,score:((w.adjusted-rank.base)*100+w.pp)/2})).filter(x=>x.w.adjusted>rank.base&&x.w.pp>0).sort((a,b)=>b.score-a.score||b.w.games-a.w.games)[0]?.w||null:null;
+  const pick=[...new Set([rank.popular,rank.best,ppBest,both,...rank.eligible].filter(Boolean))].slice(0,4);
+  const kinds=w=>[w===rank.popular&&['played','Most played'],w===rank.best&&w!==rank.popular&&['wr','Best adjusted WR'],w===ppBest&&['pp','Highest pp'],w===both&&['both','Best of both']].filter(Boolean);
+  // One label per card: best of both absorbs the win-rate and pp labels it implies; the full list goes in the tooltip.
+  const tone=w=>{const k=kinds(w).map(k=>k[0]);return k.includes('both')||k.includes('pp')&&k.includes('wr')?'both':k.includes('pp')?'pp':k.includes('wr')?'wr':k.includes('played')?'played':'alt';};
+  const tag=w=>{const k=kinds(w),t=tone(w);return t==='both'?[k.some(x=>x[0]==='played')&&'Most played','Best of both'].filter(Boolean).join(' · '):k.map(x=>x[1]).join(' · ')||'Alternative';};
   g('path-tabs').hidden=pick.length<2;
-  g('path-tabs').innerHTML=pick.map(w=>`<button type="button" data-guide-build="${esc(w.id)}" aria-pressed="${w===build}"><span class="bt-tag">${w===rank.popular?'Most played':w===rank.best?'Higher observed WR':'Alternative'}</span><span class="bt-icons">${w.items.map(id=>guideArt('item',id)).join('')}</span><b>${pct(w.wins,w.games)}</b><span>${w.games} games</span></button>`).join('');
+  g('path-tabs').innerHTML=pick.map(w=>`<button type="button" class="bt-${tone(w)}" title="${esc(kinds(w).map(k=>k[1]).join(', ')||'Alternative')}" data-guide-build="${esc(w.id)}" aria-pressed="${w===build}"><span class="bt-tag">${tag(w)}</span><span class="bt-icons">${w.items.map(id=>guideArt('item',id)).join('')}</span><b>${pct(w.wins,w.games)}</b><span>${w.games} games${ppBest?`<br><i class="bt-ppv ${w.pp>=0?'up':'down'}">build ${fmtPp(w.pp)}</i>`:''}</span></button>`).join('');
   const routeOptions=(planned.routes||[]).slice(0,4);
   g('route-tabs').hidden=!routeOptions.length;
   g('route-tabs').innerHTML=routeOptions.length?`<span class="route-label" id="route-label">Boots route</span><div class="route-options" role="group" aria-labelledby="route-label">${routeOptions.map(r=>`<button type="button" data-guide-route="${esc(r.id)}" aria-pressed="${r===planned.route}">${r.bootsId==='-'?'':guideArt('item',r.bootsId)}<span><b>${esc(guideRouteLabel(r))}</b><small>${r.games.toLocaleString()} game${r.games===1?'':'s'}</small></span></button>`).join('')}</div>`:'';
@@ -468,6 +491,9 @@ function renderGuide(){
       :state.opponent==='All matchups'?`Across all matchups: ${summary.games} games.`:`${sel.games} games against ${esc(them)}: enough for a route of its own.`);
     why.push(rank.best&&rank.best!==rank.popular?`${esc(guideBuildName(rank.best))} has a higher observed win rate (${pct(rank.best.wins,rank.best.games)} over ${rank.best.games} games), even after allowing for its smaller sample. It is listed as an alternative, not as proven better.`
       :'No other route is ahead by a point once sample size is taken into account, so the most played one is suggested.');
+    if(ppBest)why.push(ppBest===rank.popular?`It also has the highest pp: its three purchases beat what the game state predicted by the most (${fmtPp(ppBest.pp)} summed, small samples pulled toward zero).`
+      :`${esc(guideBuildName(ppBest))} has the highest pp (${fmtPp(ppBest.pp)} summed over its three purchases, small samples pulled toward zero). A lead to try, not proof it is better.`);
+    if(both&&both!==ppBest&&both!==rank.best)why.push(`${esc(guideBuildName(both))} is the best of both: above average on win rate and on pp at once.`);
     if(firstItem&&firstItem.minute!=null)why.push(`First item finished at ${guideTime(firstItem.minute)} on average in the ${timing.games} games that followed this route.`);
     why.push(`${pct(build.wins,build.games)} observed win rate${buildCi?` (likely ${buildCi[0].toFixed(0)}–${buildCi[1].toFixed(0)}%)`:''}.`);
   }
@@ -482,14 +508,14 @@ function renderGuide(){
   g('compare-title').textContent=`Compare ${slotLabel.toLowerCase()}`;
   g('compare-context').textContent=`${path?(guideState.slot==='slot1'?`${guideBootOrder(path.bootsBefore)} · all first-item choices`:guidePathLabel(path)):'All observed purchases'}${thin?' · general champion sample':''}`;
   g('compare-tabs').innerHTML=guideSlots.map(([k,label])=>`<button type="button" data-guide-slot="${k}" aria-pressed="${guideState.slot===k}">${label}</button>`).join('');
-  g('choices').innerHTML=guideComparison(guideComparisonSample(paths,path,buildSummary),!thin&&active.source?.type==='riot_match_timelines',steps.find(s=>s.kind===guideState.slot)?.c.id);
+  g('choices').innerHTML=guideComparison(guideComparisonSample(paths,path,buildSummary),!thin&&active.source?.type==='riot_match_timelines',plan.find(s=>s.kind===guideState.slot)?.id??steps.find(s=>s.kind===guideState.slot)?.c.id);
   const theirItem=opposite.summary&&topChoice(opposite.summary,'slot1');
   g('opponent-note').hidden=state.opponent==='All matchups';
   g('opponent-note').innerHTML=`<div class="eyebrow">Across the lane</div><h3>${esc(them)}’s common first item</h3>${theirItem?`${guideArt('item',theirItem.id)}<p>${esc(theirItem.label)} · ${theirItem.games} purchases</p>`:`<p>${opposite.loading?'Loading…':'No matching opponent item observations.'}</p>`}`;
   const updated=active.source?.generatedAt||stats.generatedAt;
-  g('guide-provenance').innerHTML=`<div><h3>${esc(active.source?.name||'No matching source')}</h3><p>${summary.games} champion-game observations in the displayed setup. ${updated?`Source updated ${esc(new Date(updated).toLocaleString())}.`:''} ${esc(active.source?.note||'')}</p><p>Matching local Riot data takes precedence. Imported providers are never added together. ${thin?'The setup uses all matchups; the header reports only your selected opponent.':''}</p></div><div><h3>Model coverage</h3><p>Data release: ${esc(stats.dataVersion||'bundled export')}.</p><p>${stats.wpaModel?`Outcome model trained on ${Number(stats.wpaModel.games).toLocaleString()} games. Its adjusted associations use scored purchases and remain observational.`:'No trained outcome model is available. Descriptive purchase counts still appear.'}</p><p>Timing needs ${GUIDE_TIMING_MIN} purchases per item and slot. No observations means unavailable, never a zero effect.</p></div>`;
+  g('guide-provenance').innerHTML=`<div><h3>${esc(active.source?.name||'No matching source')}</h3><p>${summary.games} champion-game observations in the displayed setup. ${updated?`Source updated ${esc(new Date(updated).toLocaleString())}.`:''} ${esc(active.source?.note||'')}</p><p>Matching local Riot data takes precedence. Imported providers are never added together. ${thin?'The setup uses all matchups; the header reports only your selected opponent.':''}</p></div><div><h3>Model coverage</h3><p>Data release: ${esc(stats.dataVersion||'bundled export')}.</p><p>${stats.wpaModel?`Outcome model trained on ${Number(stats.wpaModel.games).toLocaleString()} games. Its pp results use scored purchases and remain observational: a possible edge, not proof.`:'No trained outcome model is available. Descriptive purchase counts still appear.'}</p><p>Timing needs ${GUIDE_TIMING_MIN} purchases per item and slot. No observations means unavailable, never a zero effect.</p></div>`;
   g('guide-build-view').hidden=guideState.view!=='build';g('guide-detail').hidden=guideState.view==='build';
-  document.querySelectorAll('[data-view]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.view===guideState.view));b.tabIndex=b.dataset.view===guideState.view?0:-1;});
+  document.querySelectorAll('.view-tabs [data-view]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.view===guideState.view));b.tabIndex=b.dataset.view===guideState.view?0:-1;});
   if(guideState.view!=='build'){
     g('guide-detail').setAttribute('aria-labelledby',`view-${guideState.view}`);
     g('guide-detail').innerHTML=guideState.view==='lane'?laneView(sel):['counters','countered'].includes(guideState.view)?guideCounterView(guideState.view):table(guideState.view,sel);
@@ -498,18 +524,18 @@ function renderGuide(){
 function initGuide(){
   // Direct links such as ?champion=Kaisa&vs=Jhin open one matchup (used for the demo walkthrough).
   try{const q=new URLSearchParams(location.search),id=/^[A-Za-z]{2,20}$/;
-    if(id.test(q.get('champion')||'')){state.champion=q.get('champion');championChosen=true;if(id.test(q.get('vs')||''))state.opponent=q.get('vs');}}catch{}
+    if(id.test(q.get('champion')||'')){state.champion=q.get('champion');championChosen=true;state.fromUrl=true;if(id.test(q.get('vs')||''))state.opponent=q.get('vs');}}catch{}
   window.addEventListener('resize',()=>guideDrawBuildPath(guidePathBend));
   options($('#champ'),['Sett'],'Sett');options($('#opponent'),['All matchups'],'All matchups');
   options($('#patch'),['All collected patches']);options($('#region'),['All collected regions']);
   options($('#role'),[{value:'TOP',label:'Top'},{value:'JUNGLE',label:'Jungle'},{value:'MIDDLE',label:'Mid'},{value:'BOTTOM',label:'Bottom'},{value:'UTILITY',label:'Support'}],'TOP');
-  $('#champ').onchange=e=>{championChosen=true;state.champion=e.target.value;state.opponent='All matchups';$('#opponent').value=state.opponent;guideState.path=null;const role=bestRole(state.champion);if(role)$('#role').value=role;stats.buckets=championCache.get(state.champion)||[];renderGuide();loadChampion(state.champion);};
-  $('#opponent').onchange=e=>{state.opponent=e.target.value;guideState.path=null;renderGuide();};
-  document.querySelector('.filters').onchange=()=>{guideState.path=null;renderGuide();};
+  $('#champ').onchange=e=>{championChosen=true;state.champion=e.target.value;state.opponent='All matchups';$('#opponent').value=state.opponent;guideState.path=guideState.build=guideState.route=null;const role=bestRole(state.champion);if(role)$('#role').value=role;stats.buckets=championCache.get(state.champion)||[];renderGuide();loadChampion(state.champion);};
+  $('#opponent').onchange=e=>{state.opponent=e.target.value;guideState.path=guideState.build=guideState.route=null;renderGuide();};
+  document.querySelector('.filters').onchange=()=>{guideState.path=guideState.build=guideState.route=null;renderGuide();};
   g('guide-root').addEventListener('change',e=>{if(e.target.id==='more-routes'&&e.target.value){guideState.path=e.target.value;renderGuide();g('more-routes')?.focus();}});
   // Clicking the dimmed backdrop (the dialog element itself) closes the pop-up.
   // Theme switch: Pit (default) or Void, remembered per browser.
-  const themeBtn=g('theme-toggle'),themeLabel=()=>{if(themeBtn)themeBtn.lastChild.textContent=document.documentElement.dataset.palette==='void'?'Pit theme':'Void theme';};
+  const themeBtn=g('theme-toggle'),themeLabel=()=>{if(!themeBtn)return;const v=document.documentElement.dataset.palette==='void';themeBtn.lastChild.textContent=v?'Pit theme':'Void theme';themeBtn.setAttribute('aria-pressed',String(v));themeBtn.setAttribute('aria-label','Void theme');};
   themeLabel();
   themeBtn?.addEventListener('click',()=>{const next=document.documentElement.dataset.palette==='void'?'':'void';
     if(next)document.documentElement.dataset.palette=next;else delete document.documentElement.dataset.palette;
@@ -518,7 +544,7 @@ function initGuide(){
   g('guide-root').addEventListener('click',e=>{
     const path=e.target.closest('[data-guide-path]'),slot=e.target.closest('[data-guide-slot]'),opp=e.target.closest('[data-opp]'),view=e.target.closest('[data-view]'),sort=e.target.closest('[data-sort]');
     const build=e.target.closest('[data-guide-build]'),route=e.target.closest('[data-guide-route]'),item=e.target.closest('[data-item-kind]'),counter=e.target.closest('[data-counter-opp]');
-    if(counter){state.opponent=counter.dataset.counterOpp;if(![...$('#opponent').options].some(o=>o.value===state.opponent))$('#opponent').add(new Option(champion(state.opponent).name,state.opponent));$('#opponent').value=state.opponent;guideState.path=null;guideState.view='build';renderGuide();g('view-build').focus({preventScroll:true});window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});return;}
+    if(counter){state.opponent=counter.dataset.counterOpp;if(![...$('#opponent').options].some(o=>o.value===state.opponent))$('#opponent').add(new Option(champion(state.opponent).name,state.opponent));$('#opponent').value=state.opponent;guideState.path=guideState.build=guideState.route=null;guideState.view='build';renderGuide();g('view-build').focus({preventScroll:true});window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});return;}
     if(e.target.closest('[data-close-modal]')){g('item-modal').close();return;}
     if(e.target.closest('#setup-fold,#setup-summary')){guideState.setupFolded=!guideState.setupFolded;try{localStorage.setItem('settistics-setup-folded',guideState.setupFolded?'1':'0');}catch{}renderGuide();return;}
     if(e.target.closest('#setup-more')){guideState.setupMore=!guideState.setupMore;try{localStorage.setItem('settistics-setup-more',guideState.setupMore?'1':'0');}catch{}renderGuide();return;}
@@ -527,11 +553,11 @@ function initGuide(){
     if(item){guideOpenItem(item.dataset.itemKind,item.dataset.itemId);if(!item.closest('.choices,.later-build,#item-modal'))return;}
     if(path){guideState.path=path.dataset.guidePath;renderGuide();document.querySelector(`[data-guide-path="${CSS.escape(guideState.path)}"]`)?.focus();}
     if(slot){const origin=e.target.closest('.build,.compare-tabs,.live-chart,.later-build');guideState.slot=slot.dataset.guideSlot;renderGuide();const narrow=window.matchMedia('(max-width:900px)').matches;(origin?.classList.contains('build')&&!narrow?g('build'):g('compare-tabs')).querySelector(`[data-guide-slot="${guideState.slot}"]`)?.focus({preventScroll:true});if(narrow&&!origin?.classList.contains('compare-tabs'))document.querySelector('.comparison').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});}
-    if(opp){state.opponent=opp.dataset.opp;$('#opponent').value=state.opponent;guideState.path=null;renderGuide();}
+    if(opp){state.opponent=opp.dataset.opp;$('#opponent').value=state.opponent;guideState.path=guideState.build=guideState.route=null;renderGuide();}
     if(view){guideState.view=view.dataset.view;renderGuide();}
     if(sort){state.direction=state.sort===sort.dataset.sort?-state.direction:-1;state.sort=sort.dataset.sort;renderGuide();}
     if(e.target.closest('[data-reload]')){championCache.delete(state.champion);guideLoadErrors.delete(state.champion);loadStats();}
-    if(e.target.closest('[data-reset]')){state.opponent='All matchups';$('#opponent').value=state.opponent;$('#region').value='All collected regions';$('#patch').value='All collected patches';guideState.path=null;renderGuide();}
+    if(e.target.closest('[data-reset]')){state.opponent='All matchups';$('#opponent').value=state.opponent;$('#region').value='All collected regions';$('#patch').value='All collected patches';guideState.path=guideState.build=guideState.route=null;renderGuide();}
     if(e.target.closest('#method-link,#nav-method'))g('evidence').open=true;
   });
   document.querySelector('.view-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const views=['build','counters','countered','lane','runes','spells'],n=views.length,i=views.indexOf(guideState.view);guideState.view=views[e.key==='Home'?0:e.key==='End'?n-1:(i+(e.key==='ArrowRight'?1:n-1))%n];renderGuide();g(`view-${guideState.view}`).focus();});
