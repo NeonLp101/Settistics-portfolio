@@ -11,7 +11,7 @@ try {
 const assets=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/api-ui.js','api-ui.js'],['/api-ui.css','api-ui.css'],['/data/index.json','data/index.json']]);
 for (const page of ['data-client.js','guide.js','guide.css','theme.js','fonts.css','impressum.html','datenschutz.html','riot.txt']) assets.set('/'+page,page);
 // Self-hosted assets: strict patterns only, so no path can escape public/.
-const assetPattern=/^\/(data\/champions\/[A-Za-z0-9]+\.json|fonts\/[A-Za-z0-9-]+\.woff2|ddragon\/static\.json|ddragon\/(?:champion\/[A-Za-z0-9]+|(?:item|rune|spell)\/[0-9]+)\.png)$/;
+const assetPattern=/^\/(data\/champions\/[A-Za-z0-9]+(?:\.[0-9]{1,2})?\.json|fonts\/[A-Za-z0-9-]+\.woff2|ddragon\/static\.json|ddragon\/(?:champion\/[A-Za-z0-9]+|(?:item|rune|spell)\/[0-9]+)\.png)$/;
 // Same policy as netlify.toml, so CSP problems show up locally first.
 const CSP="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const types={txt:'text/plain',html:'text/html',js:'text/javascript',css:'text/css',json:'application/json',woff2:'font/woff2',png:'image/png'};

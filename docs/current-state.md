@@ -56,6 +56,17 @@ Prediction and description hold up on this data; causal item claims did not. Can
    CC-heavy), so the claim stays descriptive. The defensive-boots split by enemy magic share in the archive
    is a small working example.
 
+## Refreshing the site's data
+
+Visitors see the **published live-data release** (Netlify Blobs, via `/api/live-data`), not the data files
+inside a deploy; a deploy alone does not change the numbers on the live site. After an export, run
+`npm run data:publish` (with `NODE_OPTIONS=--max-old-space-size=24000` at the current ~2.4 GB of data), or
+the whole `npm run data:refresh` (WPA, export, build, publish; it does not rerun `pipeline/lane.py`).
+Publishing keeps the previous release as a fallback. The live-data function can return at most 4 MB (gzipped)
+per file, so the build splits any champion over 3.5 MB into parts (`<id>.json`, `<id>.2.json`, ...) that the
+page fetches and merges; at 173,763 games, 19 champions are split in two. Deploy a client that understands
+parts before publishing a release that contains them.
+
 ## Rules that must hold
 
 - Never average item timings across build orders.

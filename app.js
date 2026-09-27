@@ -17,6 +17,12 @@ let dataGeneration=0;
 async function fetchJson(url){const res=await fetch(url,{cache:'no-cache',signal:AbortSignal.timeout(15000)});if(!res.ok)throw new Error(`HTTP ${res.status}`);return res.json();}
 const liveData=typeof createDataClient==='function'?createDataClient(fetchJson,()=>{dataGeneration++;championCache.clear();stats.buckets=[];setTimeout(()=>loadStats(),0);}):null;
 async function json(url){return liveData&&url.startsWith('data/')?liveData.get(url.slice(5)):fetchJson(url);}
+// A large champion is split into parts (<id>.json, <id>.2.json, ...) to fit the live-data response limit.
+async function championBuckets(id){
+  const base=`data/champions/${encodeURIComponent(id)}`,first=await json(`${base}.json`);
+  const rest=first.parts>1?await Promise.all(Array.from({length:first.parts-1},(_,i)=>json(`${base}.${i+2}.json`))):[];
+  return [first,...rest].flatMap(d=>d.buckets||[]);
+}
 function wilson(w,n){if(!n)return null;const z=1.96,p=w/n,d=1+z*z/n,c=(p+z*z/(2*n))/d,h=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;return[(c-h)*100,(c+h)*100];}
 function pct(w,n){return n?`${(100*w/n).toFixed(1)}%`:'—';}
 // How far a count can be trusted, in words.
@@ -246,7 +252,7 @@ function laneView(sel){
 function opponentView(){
   // The opponent's file holds their games against us, seen from their side.
   const opp=state.opponent;if(opp==='All matchups')return null;
-  if(!championCache.has(opp)){const generation=dataGeneration;championCache.set(opp,null);json(`data/champions/${encodeURIComponent(opp)}.json`).then(d=>{if(generation!==dataGeneration)return;championCache.set(opp,d.buckets||[]);renderSafely();}).catch(()=>{if(generation===dataGeneration)championCache.set(opp,[]);});return null;}
+  if(!championCache.has(opp)){const generation=dataGeneration;championCache.set(opp,null);championBuckets(opp).then(b=>{if(generation!==dataGeneration)return;championCache.set(opp,b);renderSafely();}).catch(()=>{if(generation===dataGeneration)championCache.set(opp,[]);});return null;}
   const list=championCache.get(opp);if(!list)return null;
   const role=$('#role').value,patch=$('#patch').value,region=$('#region').value;
   return merged(list.filter(b=>b.champion===opp&&b.opponent===state.champion&&b.role===role&&(patch==='All collected patches'||b.patch===patch)&&(region==='All collected regions'||b.region===region)));
@@ -315,7 +321,7 @@ async function loadChampion(id){
   const generation=dataGeneration;
   if(!Array.isArray(championCache.get(id))){
     // Champions without collected games simply have no file.
-    try{const data=await json(`data/champions/${encodeURIComponent(id)}.json`);if(generation!==dataGeneration)return;championCache.set(id,data.buckets||[]);if(typeof guideLoadErrors!=='undefined')guideLoadErrors.delete(id);}catch{if(generation!==dataGeneration)return;championCache.set(id,[]);if(typeof guideLoadErrors!=='undefined'&&coverageRows.some(r=>r.champion===id))guideLoadErrors.set(id,'Could not load this champion’s statistics. Retry to load the collected games.');}
+    try{const buckets=await championBuckets(id);if(generation!==dataGeneration)return;championCache.set(id,buckets);if(typeof guideLoadErrors!=='undefined')guideLoadErrors.delete(id);}catch{if(generation!==dataGeneration)return;championCache.set(id,[]);if(typeof guideLoadErrors!=='undefined'&&coverageRows.some(r=>r.champion===id))guideLoadErrors.set(id,'Could not load this champion’s statistics. Retry to load the collected games.');}
   }
   if(state.champion===id){stats.buckets=championCache.get(id);renderSafely();}
 }

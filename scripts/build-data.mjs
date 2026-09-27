@@ -4,9 +4,12 @@
 import {lstat,mkdir,open,readFile,readdir,realpath,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {basename,dirname,isAbsolute,relative,resolve,sep} from 'node:path';
+import {gzipSync} from 'node:zlib';
 import {validateRelease} from './aggregate-schema.mjs';
 
 export const STREAM_ABOVE=64*2**20;
+// live-store.wireBody refuses a file over 4 MB gzipped (Netlify caps function responses at 6 MB); keep a margin.
+export const SPLIT_ABOVE=3_500_000;
 const WS=new Set([0x20,0x09,0x0a,0x0d]);
 
 async function safeOutput(out){
@@ -71,7 +74,7 @@ async function readLarge(path,size){
   return buf;
 }
 
-export async function buildData({stats:statsPath='data/public/stats.json',imports:importDir='data/imports',out='public/data',streamAbove=STREAM_ABOVE,now=new Date()}={}){
+export async function buildData({stats:statsPath='data/public/stats.json',imports:importDir='data/imports',out='public/data',streamAbove=STREAM_ABOVE,splitAbove=SPLIT_ABOVE,now=new Date()}={}){
   out=await safeOutput(out);
   const {base,count,at,streamed}=await readBase(statsPath,streamAbove);
   if(![1,2].includes(base.schemaVersion)||!Array.isArray(base.buckets))throw new Error('Invalid Riot statistics export');
@@ -107,13 +110,28 @@ export async function buildData({stats:statsPath='data/public/stats.json',import
   }
   const index={...meta,patches:[...patches],regions:[...regions],
     coverage:[...coverage].map(([key,games])=>{const [champion,role,opponent]=key.split('|');return{champion,role,opponent,games};})};
-  const shard=champion=>({schemaVersion:2,champion,buckets:byChampion.get(champion).map(bucket)});
+  // [[file name, shard], ...] for one champion: one file, or equal parts when it would exceed splitAbove gzipped.
+  const partCount=new Map();
+  const slices=(champion,buckets,size)=>{const n=Math.ceil(buckets.length/size);return Array.from({length:n},(_,i)=>
+    [i?`champions/${champion}.${i+1}.json`:`champions/${champion}.json`,{schemaVersion:2,champion,part:i+1,parts:n,buckets:buckets.slice(i*size,(i+1)*size)}]);};
+  const shardFiles=champion=>{
+    const buckets=byChampion.get(champion).map(bucket),known=partCount.get(champion);
+    if(known===1)return [[`champions/${champion}.json`,{schemaVersion:2,champion,buckets}]];
+    if(known)return slices(champion,buckets,Math.ceil(buckets.length/known));
+    const fits=v=>gzipSync(JSON.stringify(v)).length<=splitAbove;
+    if(fits({schemaVersion:2,champion,buckets})){partCount.set(champion,1);return [[`champions/${champion}.json`,{schemaVersion:2,champion,buckets}]];}
+    for(let parts=2;parts<=Math.min(buckets.length,99);parts++){
+      const files=slices(champion,buckets,Math.ceil(buckets.length/parts));
+      if(files.every(([,v])=>fits(v))){partCount.set(champion,files.length);return files;}
+    }
+    throw new Error(`${champion} cannot be split under ${splitAbove} gzipped bytes per file`);
+  };
   // validateRelease only uses has/get/iteration, so shards are materialised one at a time.
   validateRelease({has:name=>name==='index.json',get:name=>name==='index.json'?index:undefined,
-    *[Symbol.iterator](){yield ['index.json',index];for(const champion of byChampion.keys())yield [`champions/${champion}.json`,shard(champion)];}});
+    *[Symbol.iterator](){yield ['index.json',index];for(const champion of byChampion.keys())yield* shardFiles(champion);}});
   await rm(out,{recursive:true,force:true});
   await mkdir(`${out}/champions`,{recursive:true});
-  for(const champion of byChampion.keys())await writeFile(`${out}/champions/${champion}.json`,JSON.stringify(shard(champion)));
+  for(const champion of byChampion.keys())for(const [name,shard] of shardFiles(champion))await writeFile(`${out}/${name}`,JSON.stringify(shard));
   await writeFile(`${out}/index.json`,JSON.stringify(index));
-  return {index,buckets:total,champions:byChampion.size,imports:imports.length,streamed};
+  return {index,buckets:total,champions:byChampion.size,splitChampions:[...partCount].filter(([,n])=>n>1).length,imports:imports.length,streamed};
 }

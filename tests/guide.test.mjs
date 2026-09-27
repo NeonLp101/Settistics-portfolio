@@ -183,3 +183,9 @@ test('counters rank lane opponents by win rate pulled toward the usual rate',()=
  run(`guideBase=()=>({buckets:[]})`);
  assert.match(run(`guideCounterView('counters')`),/No collected games/);
 });
+test('split champion data is fetched part by part and merged',async()=>{
+ run(`globalThis.fetched=[];json=async u=>{fetched.push(u);return u.endsWith('Sylas.json')?{part:1,parts:3,buckets:[{id:1}]}:u.endsWith('Sylas.2.json')?{part:2,parts:3,buckets:[{id:2}]}:u.endsWith('Sylas.3.json')?{part:3,parts:3,buckets:[{id:3}]}:{buckets:[{id:'whole'}]};}`);
+ assert.deepEqual(json(`${JSON.stringify(await run(`championBuckets('Sylas')`))}`),[{id:1},{id:2},{id:3}]);
+ assert.deepEqual(json(`${JSON.stringify(await run(`championBuckets('Garen')`))}`),[{id:'whole'}]);
+ assert.deepEqual(json('fetched'),['data/champions/Sylas.json','data/champions/Sylas.2.json','data/champions/Sylas.3.json','data/champions/Garen.json']);
+});

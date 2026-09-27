@@ -56,18 +56,34 @@ function invariants(v,p='root') {
   for(const [k,x] of Object.entries(v))invariants(x,p+'.'+k);
 }
 
-export const filePattern=/^(index\.json|champions\/[A-Za-z][A-Za-z0-9]{0,29}\.json)$/;
+// A champion too large for one live-data response is split into champions/<id>.json (part 1) and <id>.<n>.json.
+export const filePattern=/^(index\.json|champions\/[A-Za-z][A-Za-z0-9]{0,29}(?:\.(?:[2-9]|[1-9][0-9]))?\.json)$/;
+const shard=obj({schemaVersion:literal(2),champion:champ,part:count,parts:count,buckets:arr(bucket)},['schemaVersion','champion','buckets']);
+const shardName=v=>v.part>1?`champions/${v.champion}.${v.part}.json`:`champions/${v.champion}.json`;
 export function validateFile(name,value){
   if(!filePattern.test(name))fail('filename');
   if(name==='index.json')index(value,name);
-  else {obj({schemaVersion:literal(2),champion:champ,buckets:arr(bucket)})(value,name);if(name!==`champions/${value.champion}.json`||value.buckets.some(b=>b.champion!==value.champion))fail(name);}
+  else {
+    shard(value,name);
+    const split=Object.hasOwn(value,'parts');
+    if(split!==Object.hasOwn(value,'part')||split&&(value.parts<2||value.part<1||value.part>value.parts))fail(name+'.part');
+    if(name!==shardName(value)||value.buckets.some(b=>b.champion!==value.champion))fail(name);
+  }
   invariants(value,name);
   return value;
 }
 
 export function validateRelease(files){
   if(!files.has('index.json'))fail('missing index');
-  for(const [name,value] of files)validateFile(name,value);
+  const split=new Map();
+  for(const [name,value] of files){
+    validateFile(name,value);
+    if(!value.parts)continue;
+    const s=split.get(value.champion)||{parts:value.parts,seen:new Set()};
+    if(s.parts!==value.parts)fail(name+'.parts');
+    s.seen.add(value.part);split.set(value.champion,s);
+  }
+  for(const [champion,s] of split)if(s.seen.size!==s.parts)fail(`champions/${champion} parts`);
   const meta=files.get('index.json'), sums=new Map(), sources=new Set(meta.sources.map(s=>s.id)),seen=new Set();
   for(const [name,v] of files)if(name!=='index.json')for(const b of v.buckets){
     if(!sources.has(b.sourceId)||!meta.patches.includes(b.patch)||!meta.regions.includes(b.region))fail('provenance');

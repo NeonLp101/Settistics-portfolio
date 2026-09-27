@@ -9,5 +9,5 @@ for (const file of await readdir('fonts')) if(file.endsWith('.woff2')) await cop
 const ddragon=await fetchStatic('public/ddragon');
 console.log(`Self-hosted fonts and Data Dragon ${ddragon.version} (${ddragon.champions.length} champions).`);
 const data=await buildData();
-console.log(`Aggregates: ${data.buckets} buckets in ${data.champions} champion shards${data.streamed?' (large export, parsed per bucket)':''}.`);
+console.log(`Aggregates: ${data.buckets} buckets in ${data.champions} champion shards${data.splitChampions?` (${data.splitChampions} split into parts)`:''}${data.streamed?' (large export, parsed per bucket)':''}.`);
 console.log(`Built public site: ${data.index.uniqueMatches} locally collected matches, ${data.imports} aggregate import(s). No private files copied.`);

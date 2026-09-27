@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {gzipSync} from 'node:zlib';
 import {buildData,splitStats} from '../scripts/build-data.mjs';
+import {readAggregateDirectory} from '../scripts/publish-data.mjs';
 
 const now=new Date('2026-09-25T08:00:00Z');
 const choice=(id,label,games)=>({kind:'items',id,label,games,wins:1,timeSum:12.5,timeCount:games});
@@ -91,5 +93,24 @@ test('the build cannot replace an unrelated directory',async()=>{
   try{
     await assert.rejects(buildData({...f,out:f.dir,streamAbove:0,now}),/Refusing to replace/);
     assert.equal(readFileSync(f.stats,'utf8'),JSON.stringify(STATS));
+  }finally{rmSync(f.dir,{recursive:true,force:true});}
+});
+
+test('a champion over the size limit is split into parts that merge back exactly',async()=>{
+  const f=fixture(JSON.stringify(STATS));
+  try{
+    await buildData({...f,out:join(f.dir,'whole'),splitAbove:Infinity,now});
+    const whole=readFileSync(join(f.dir,'whole','champions','Garen.json'));
+    const split=await buildData({...f,out:join(f.dir,'split'),splitAbove:gzipSync(whole).length-1,now});
+    assert.equal(split.splitChampions,1);
+    const names=readdirSync(join(f.dir,'split','champions')).sort();
+    assert.ok(names.includes('Garen.json')&&names.includes('Garen.2.json'),names.join());
+    const parts=names.filter(n=>n.startsWith('Garen.')).map(n=>JSON.parse(readFileSync(join(f.dir,'split','champions',n),'utf8'))).sort((a,b)=>a.part-b.part);
+    assert.deepEqual(parts.map(p=>[p.part,p.parts]),parts.map((_,i)=>[i+1,parts.length]));
+    assert.deepEqual(parts.flatMap(p=>p.buckets),JSON.parse(whole).buckets);
+    assert.equal(JSON.parse(readFileSync(join(f.dir,'split','champions','Riven.json'),'utf8')).parts,undefined);
+    assert.ok((await readAggregateDirectory(join(f.dir,'split'))).has('champions/Garen.2.json'));
+    rmSync(join(f.dir,'split','champions','Garen.2.json'));
+    await assert.rejects(readAggregateDirectory(join(f.dir,'split')),/parts/);
   }finally{rmSync(f.dir,{recursive:true,force:true});}
 });

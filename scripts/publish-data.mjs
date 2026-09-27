@@ -15,7 +15,7 @@ export async function readAggregateDirectory(directory){
   if((await lstat(directory)).isSymbolicLink()||(await lstat(join(directory,'champions'))).isSymbolicLink())throw Error('Symlink directory refused');
   const entries=await readdir(directory);if(entries.some(n=>!['index.json','champions'].includes(n)))throw Error('Unexpected file in aggregate directory');
   await read('index.json');
-  for(const name of await readdir(join(directory,'champions'))){if(!/^[A-Za-z][A-Za-z0-9]{0,29}\.json$/.test(name))throw Error('Unexpected champion filename');await read('champions/'+name);}
+  for(const name of await readdir(join(directory,'champions'))){if(!/^[A-Za-z][A-Za-z0-9]{0,29}(?:\.(?:[2-9]|[1-9][0-9]))?\.json$/.test(name))throw Error('Unexpected champion filename');await read('champions/'+name);}
   return validateRelease(files);
 }
 

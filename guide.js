@@ -231,7 +231,7 @@ function guideOpponent(sourceId){
   if(!championCache.has(id)){
     const generation=dataGeneration;
     championCache.set(id,null);
-    json(`data/champions/${encodeURIComponent(id)}.json`).then(d=>{if(generation!==dataGeneration)return;championCache.set(id,d.buckets||[]);renderSafely();}).catch(()=>{if(generation!==dataGeneration)return;championCache.set(id,[]);renderSafely();});
+    championBuckets(id).then(b=>{if(generation!==dataGeneration)return;championCache.set(id,b);renderSafely();}).catch(()=>{if(generation!==dataGeneration)return;championCache.set(id,[]);renderSafely();});
   }
   const buckets=championCache.get(id);
   if(buckets===null)return {summary:null,paths:[],builds:[],loading:true};
